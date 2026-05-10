@@ -1,91 +1,95 @@
 # AgentOS
 
-AI CLI agent backend that wraps Claude/Codex/Gemini command-line tools into a reusable Go service — decoupled from any specific transport or frontend.
+AI agent kernel — manages Claude/Codex/Gemini CLI tools through a layered architecture of protocol, behavior primitives, and orchestration. Two entry points: WebSocket server for mobile clients, and a desktop CLI daemon.
 
 ## Architecture
 
 ```
+┌──────────────────────────────────────────────────┐
+│  kernel/          orchestration layer            │
+│  Kernel struct · session mgmt · permission       │
+│  routing · event projection · catalog sync       │
+├──────────────────────────────────────────────────┤
+│  session/         behavior primitives (22 methods)│
+│  Service: Execute · SendInput · Permission · ... │
+├──────────────────────────────────────────────────┤
+│  protocol/        wire protocol (40+ event types) │
+├──────────────────────────────────────────────────┤
+│  engine/          PTY/Exec runners               │
+│  data/            persistence + claudesync       │
+└──────────────────────────────────────────────────┘
+
 cmd/
-  mobilevc/        mobile WebSocket server entry point
-  agentd/          desktop CLI daemon entry point
+  mobilevc/         WebSocket server (uses gateway + kernel)
+  agentd/           desktop CLI daemon (uses kernel directly)
 
 internal/
-  session/         core AI agent lifecycle (22-method Service API)
-  engine/          PTY/Exec runners for Claude, Codex, Gemini
-  data/            persistence (file-backed session store, claudesync, codexsync)
-    skills/        skill registry and launcher
-    claudesync/    Claude CLI JSONL sync
-    codexsync/     Codex session sync
-  gateway/         WebSocket handler, permission rules, slash commands
-  protocol/        event types and wire protocol (40+ event types)
-  config/          environment-based configuration
-  logx/            structured logging
-  adb/             Android Debug Bridge (screen streaming, touch/key input)
-  push/            push notification service abstraction
-  tts/             text-to-speech (ChatTTS)
+  kernel/           agent orchestration core
+  session/          AI agent lifecycle primitives
+  engine/           PTY/Exec runners for Claude, Codex, Gemini
+  data/             persistence (file-backed store, claudesync, codexsync)
+  protocol/         event types (40+ events)
+  gateway/          WebSocket handler, ADB, push
+  config/           environment-based configuration
+  logx/             structured logging
+  adb/              Android Debug Bridge
+  push/             push notification service
+  tts/              text-to-speech (ChatTTS)
 ```
 
-## Core API (`session.Service`)
+## Usage
 
-The core is transport-agnostic — all I/O uses `emit func(any)` callbacks.
+### As a library (desktop CLI / custom frontend)
 
 ```go
-svc := session.NewService(sessionID, session.Dependencies{
-    NewExecRunner: func() engine.Runner { return engine.NewExecRunner() },
-    NewPtyRunner:  func() engine.Runner { return engine.NewPtyRunner() },
-})
-defer svc.Cleanup()
+store, _ := data.NewFileStore("")
+k := kernel.New(store)
 
-// Execute an AI CLI command (PTY mode for interactive sessions)
+// Create session
+summary, _ := store.CreateSession(ctx, "My session")
+
+// Use behavior primitives directly
+svc := session.NewService(summary.ID, session.Dependencies{
+    NewExecRunner: k.NewExecRunner,
+    NewPtyRunner:  k.NewPtyRunner,
+})
 svc.Execute(ctx, sessionID, session.ExecuteRequest{
     Command: "claude",
-    CWD:     ".",
     Mode:    engine.ModePTY,
 }, func(event any) {
-    // handle events: LogEvent, PromptRequestEvent, StepUpdateEvent, FileDiffEvent...
+    // handle events from agent
 })
-
-// Send user input
-svc.SendInput(ctx, sessionID, session.InputRequest{
-    Data: "rewrite this function in Rust\n",
-}, emit)
-
-// Approve/deny permission requests
-svc.SendPermissionDecision(ctx, sessionID, "approve", meta, emit)
-
-// Review code changes
-svc.ReviewDecision(ctx, sessionID, session.ReviewDecisionRequest{
-    Decision: "accept", // accept / revert / revise
-}, emit)
 ```
 
-## Quick Start
+### As a server (mobile WebSocket)
 
 ```bash
-# Build everything
-go build ./...
-
-# Run tests
-go test ./...
-
-# Start mobile WebSocket server
 AUTH_TOKEN=your-token go run ./cmd/mobilevc
+```
 
-# Start desktop CLI daemon
+### As a CLI daemon
+
+```bash
 go run ./cmd/agentd
+```
+
+## Build & Test
+
+```bash
+go build ./...     # build all packages
+go test ./...      # run tests
 ```
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTH_TOKEN` | *required* | WebSocket authentication token |
-| `PORT` | `8001` | Server listen port |
+| `AUTH_TOKEN` | *required* | WebSocket auth token |
+| `PORT` | `8001` | Listen port |
 | `RUNTIME_DEFAULT_COMMAND` | `claude` | Default AI CLI |
-| `RUNTIME_DEFAULT_MODE` | `pty` | Execution mode: `pty` or `exec` |
-| `RUNTIME_WORKSPACE_ROOT` | — | Workspace root directory |
-| `RUNTIME_DEBUG` | `false` | Enable debug logging |
-| `TTS_ENABLED` | `false` | Enable text-to-speech |
+| `RUNTIME_DEFAULT_MODE` | `pty` | Execution mode |
+| `RUNTIME_DEBUG` | `false` | Debug logging |
+| `TTS_ENABLED` | `false` | Text-to-speech |
 
 ## Go Module
 

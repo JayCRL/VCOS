@@ -10,6 +10,7 @@ import (
 
 	"mobilevc/internal/data"
 	"mobilevc/internal/engine"
+	"mobilevc/internal/kernel"
 	"mobilevc/internal/protocol"
 	"mobilevc/internal/session"
 )
@@ -24,7 +25,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create a new session for this CLI interaction.
+	// Create the agent kernel.
+	k := kernel.New(store)
+
+	// Create a new session.
 	summary, err := store.CreateSession(ctx, "CLI session")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create session: %v\n", err)
@@ -33,12 +37,12 @@ func main() {
 	sessionID := summary.ID
 
 	svc := session.NewService(sessionID, session.Dependencies{
-		NewExecRunner: func() engine.Runner { return engine.NewExecRunner() },
-		NewPtyRunner:  func() engine.Runner { return engine.NewPtyRunner() },
+		NewExecRunner: k.NewExecRunner,
+		NewPtyRunner:  k.NewPtyRunner,
 	})
 	defer svc.Cleanup()
 
-	// cliEmit formats session events for terminal output.
+	// cliEmit formats kernel events for terminal output.
 	cliEmit := func(event any) {
 		switch e := event.(type) {
 		case protocol.LogEvent:

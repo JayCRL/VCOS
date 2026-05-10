@@ -249,7 +249,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else if trimmedSessionID != strings.TrimSpace(selectedSessionID) {
 			service = nil
 			if entry := h.runtimeSessions.Ensure(trimmedSessionID); entry != nil {
-				service = entry.service
+				service = entry.Service
 			}
 		}
 		return buildProjectionSnapshotForService(trimmedSessionID, service)
@@ -261,11 +261,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return nil, runtimeSvc
 		}
 		if trimmedSessionID == strings.TrimSpace(selectedSessionID) && activeRuntimeSession != nil {
-			return activeRuntimeSession, activeRuntimeSession.service
+			return activeRuntimeSession, activeRuntimeSession.Service
 		}
 		entry := h.runtimeSessions.Ensure(trimmedSessionID)
 		if entry != nil {
-			return entry, entry.service
+			return entry, entry.Service
 		}
 		return nil, runtimeSvc
 	}
@@ -276,10 +276,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return false
 		}
 		entry := h.runtimeSessions.Get(trimmedSessionID)
-		if entry == nil || entry.service == nil {
+		if entry == nil || entry.Service == nil {
 			return false
 		}
-		snapshot := entry.service.RuntimeSnapshot()
+		snapshot := entry.Service.RuntimeSnapshot()
 		return snapshot.Running && strings.TrimSpace(snapshot.ActiveSession) == trimmedSessionID
 	}
 
@@ -333,7 +333,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sessionRuntime := h.runtimeSessions.Ensure(targetSessionID)
 		accepted := true
 		if sessionRuntime != nil {
-			accepted = sessionRuntime.markClientAction(clientActionID)
+			accepted = sessionRuntime.MarkClientAction(clientActionID)
 		}
 		emit(protocol.NewClientActionAckEvent(targetSessionID, action, clientActionID, "accepted", !accepted))
 		return accepted
@@ -452,7 +452,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		previousRuntimeSvc := runtimeSvc
 		if previousSessionID == nextSessionID && nextSessionID != "" {
 			if entry := h.runtimeSessions.Attach(nextSessionID, connectionID, emit); entry != nil {
-				runtimeSvc = entry.service
+				runtimeSvc = entry.Service
 				activeRuntimeSession = entry
 			}
 			selectedSessionID = nextSessionID
@@ -470,7 +470,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if entry := h.runtimeSessions.Attach(nextSessionID, connectionID, emit); entry != nil {
-			runtimeSvc = entry.service
+			runtimeSvc = entry.Service
 			activeRuntimeSession = entry
 			return
 		}
@@ -545,7 +545,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sessionRuntime, sessionRuntimeSvc := runtimeForSession(runtimeSessionID)
 		emitSessionEvent := func(event any) {
 			if sessionRuntime != nil {
-				sessionRuntime.emit(event)
+				sessionRuntime.Emit(event)
 				return
 			}
 			emit(event)
@@ -620,7 +620,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						emitAIStatusEvent(status)
 					}
 					if sessionRuntime != nil {
-						sessionRuntime.markPersisted(eventCursorFromEvent(event))
+						sessionRuntime.MarkPersisted(eventCursorFromEvent(event))
 					}
 					return
 				}
@@ -934,11 +934,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			replayedCurrentPermission := false
 			if sessionRuntime != nil {
 				effectiveCursor := req.LastSeenEventCursor
-				if persisted := sessionRuntime.persistedCursor.Load(); persisted > effectiveCursor {
+				if persisted := sessionRuntime.PersistedCursor(); persisted > effectiveCursor {
 					effectiveCursor = persisted
 				}
 				currentPermissionID = strings.TrimSpace(runtimeSvc.CurrentPermissionRequestID(record.Summary.ID))
-				for _, pendingEvent := range sessionRuntime.pendingSince(effectiveCursor) {
+				for _, pendingEvent := range sessionRuntime.PendingSince(effectiveCursor) {
 					if currentPermissionID != "" {
 						if prompt, ok := pendingEvent.(protocol.PromptRequestEvent); ok &&
 							strings.TrimSpace(prompt.BlockingKind) == "permission" &&
@@ -949,12 +949,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					replayedCount++
 					emit(pendingEvent)
 				}
-				latestCursor = sessionRuntime.latestCursor()
+				latestCursor = sessionRuntime.LatestCursor()
 			}
 			if currentPermissionID != "" && !replayedCurrentPermission {
 				var prompt *protocol.PromptRequestEvent
 				if sessionRuntime != nil {
-					prompt = sessionRuntime.latestPendingPermissionPrompt(currentPermissionID)
+					prompt = sessionRuntime.LatestPendingPermissionPrompt(currentPermissionID)
 				}
 				if prompt == nil {
 					prompt = session.RefreshedPermissionPromptEventWithID(record.Summary.ID, protocol.PermissionDecisionRequestEvent{
@@ -1765,7 +1765,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					} else {
 						var refreshed *protocol.PromptRequestEvent
 						if sessionRuntime != nil {
-							refreshed = sessionRuntime.latestPendingPermissionPrompt(currentID)
+							refreshed = sessionRuntime.LatestPendingPermissionPrompt(currentID)
 						}
 						if refreshed == nil {
 							refreshed = session.RefreshedPermissionPromptEvent(sessionID, permissionEvent, service)
@@ -2412,8 +2412,8 @@ func taskCursorSnapshot(sessionRuntime *runtimeSession) session.TaskCursorSnapsh
 		return session.TaskCursorSnapshot{}
 	}
 	return session.TaskCursorSnapshot{
-		LatestCursor: sessionRuntime.latestCursor(),
-		LastOutputAt: sessionRuntime.lastOutputTime(),
+		LatestCursor: sessionRuntime.LatestCursor(),
+		LastOutputAt: sessionRuntime.LastOutputTime(),
 	}
 }
 
@@ -2421,7 +2421,7 @@ func deltaCursorSnapshot(sessionRuntime *runtimeSession) session.DeltaCursorSnap
 	if sessionRuntime == nil {
 		return session.DeltaCursorSnapshot{}
 	}
-	return session.DeltaCursorSnapshot{LatestCursor: sessionRuntime.latestCursor()}
+	return session.DeltaCursorSnapshot{LatestCursor: sessionRuntime.LatestCursor()}
 }
 
 func toProtocolSummary(item data.SessionSummary) protocol.SessionSummary {
@@ -3359,10 +3359,10 @@ func prepareSessionEventForResume(sessionRuntime *runtimeSession, sessionID stri
 	if sessionRuntime == nil || strings.TrimSpace(sessionID) == "" {
 		return event
 	}
-	event = sessionRuntime.appendPending(event)
-	if sessionRuntime.listenerCount() == 0 {
+	event = sessionRuntime.AppendPending(event)
+	if sessionRuntime.ListenerCount() == 0 {
 		if notice := detachedResumeNoticeEvent(sessionID, event); notice != nil {
-			sessionRuntime.appendPending(*notice)
+			sessionRuntime.AppendPending(*notice)
 		}
 	}
 	return event
