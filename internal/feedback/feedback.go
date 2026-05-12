@@ -1,5 +1,5 @@
 // Package feedback implements the user feedback loop — the topmost layer in the
-// VibeOS architecture. It turns evolution results into reviewable suggestions,
+// VCOS architecture. It turns evolution results into reviewable suggestions,
 // records user decisions (accept / reject / adjust), and writes the adjusted
 // confidence back to the Memory MOE, closing the "进化建议 → 用户确认 → 写回
 // 系统生效" loop.

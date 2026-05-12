@@ -1,4 +1,4 @@
-# VibeOS 架构设计
+# VCOS 架构设计
 
 > 来源:[`docs/assets/architecture.png`](assets/architecture.png)(模块依赖与数据流示意图,进阶版)
 > 进度版本:2026-05-12(P0–P5 骨架全部落地,语义嵌入器真实后端待接)
@@ -101,7 +101,7 @@ type Store interface {
 |---|---|---|
 | git worktree | ✅ 主选 | <100ms,跨平台,够覆盖 80% 场景(Linter / 单测 / 静态分析) |
 | Docker | ❌ | macOS 体验差,镜像管理复杂(mobilevc 入口暗示主战场是个人 dev 机) |
-| Firecracker / gVisor | ❌ | Linux only,单机 VibeOS 过度设计,留给云端版本 |
+| Firecracker / gVisor | ❌ | Linux only,单机 VCOS 过度设计,留给云端版本 |
 | nsjail / chroot | ⚠️ 备选 | 仅 Linux,需要时再做 |
 
 危险动作(`rm -rf`、网络外联、长时进程)**不靠隔离层兜底**,在 `kernel/lockmgr` + `watchdog` 做能力白名单 + 超时杀。

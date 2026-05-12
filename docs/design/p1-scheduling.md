@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-在 P0 事件总线上叠加 VibeOS 的"内核调度层"。三个子模块互相正交:
+在 P0 事件总线上叠加 VCOS 的"内核调度层"。三个子模块互相正交:
 
 | 子模块 | 角色 | 依赖 |
 |---|---|---|
@@ -142,5 +142,5 @@ Watchdog 超时 → publish ErrorEvent{Code: watchdog_timeout}
 
 - Scheduler 自动接管 `ExecuteAICommand` —— 仍由调用方显式 `Decide`(避免在没有 MOE 的情况下做错决策)
 - Watchdog 强 kill —— 需要看门人拿到 `engine.Runner` 句柄,P2/P3 再做
-- 跨进程锁(Redis 等)—— 单机 VibeOS 不需要
+- 跨进程锁(Redis 等)—— 单机 VCOS 不需要
 - 锁等待队列 —— Defer 后由调用方决定重试,scheduler 不入队

@@ -1,5 +1,5 @@
 // Package lockmgr provides a string-keyed, TTL-bounded, reentrant lock
-// manager for serializing access to VibeOS resources (sessions, files,
+// manager for serializing access to VCOS resources (sessions, files,
 // external services). It is the resource-arbitration substrate used by the
 // scheduler and watchdog in Phase 1.
 //

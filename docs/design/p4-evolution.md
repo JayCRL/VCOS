@@ -108,7 +108,7 @@ Kernel.Evolver  *evolve.Evolver    // proposal evaluation + learning writeback
 ## 8. 不做
 
 - Tree-sitter 静态分析(预留 L2 SCIP)
-- Docker/Firecracker 隔离(单机 VibeOS 不需要)
+- Docker/Firecracker 隔离(单机 VCOS 不需要)
 - 自动回滚(当前仅报告,不自动 revert)
 - 跨语言 check runner(当前仅 Go,可通过 Proposal.Checks 自定义命令)
 - 进化建议 UI 展示(留 P5 反馈闭环)

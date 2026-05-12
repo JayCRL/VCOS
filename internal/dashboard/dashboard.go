@@ -1,5 +1,5 @@
 // Package dashboard provides a lightweight HTTP observability surface for
-// VibeOS — event stream (SSE), active sessions, memory browser, scheduler
+// VCOS — event stream (SSE), active sessions, memory browser, scheduler
 // decisions, and the evolution feedback loop (proposals + accept/reject). It
 // is the "可视化与监控台" from the architecture diagram.
 //
