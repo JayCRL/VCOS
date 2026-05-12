@@ -66,7 +66,8 @@ func (k *Kernel) CreateSession(ctx context.Context, conn *ConnectionState, title
 		return data.SessionSummary{}
 	}
 
-	if cwd := strings.TrimSpace(cwd); cwd != "" {
+	cwd = strings.TrimSpace(cwd)
+	if cwd != "" {
 		record, getErr := k.Store.GetSession(ctx, created.ID)
 		if getErr == nil {
 			record.Projection.Runtime.CWD = cwd
@@ -76,6 +77,11 @@ func (k *Kernel) CreateSession(ctx context.Context, conn *ConnectionState, title
 				created = record.Summary
 			}
 		}
+	}
+
+	// Run cognitive intake for the new session.
+	if k.Intake != nil {
+		_, _ = k.Intake.Run(ctx, created.ID, cwd, title)
 	}
 
 	k.SwitchSession(conn, created.ID, sink)

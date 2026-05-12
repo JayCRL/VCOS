@@ -864,8 +864,8 @@ func TestSessionResumeReplaysPendingEvents(t *testing.T) {
 	if runtimeSession == nil {
 		t.Fatal("expected runtime session")
 	}
-	runtimeSession.appendPending(protocol.NewPromptRequestEvent(sessionID, "继续输入", nil))
-	runtimeSession.appendPending(protocol.NewSessionResumeNoticeEvent(sessionID, "assistant_reply", "info", "MobileVC", "后台期间有新的回复"))
+	runtimeSession.AppendPending(protocol.NewPromptRequestEvent(sessionID, "继续输入", nil))
+	runtimeSession.AppendPending(protocol.NewSessionResumeNoticeEvent(sessionID, "assistant_reply", "info", "MobileVC", "后台期间有新的回复"))
 
 	if err := conn.WriteJSON(protocol.SessionResumeRequestEvent{
 		ClientEvent:         protocol.ClientEvent{Action: "session_resume"},
@@ -2012,7 +2012,7 @@ func TestHandlerReconnectReattachesRunningSessionRuntime(t *testing.T) {
 	}
 
 	if entry := h.runtimeSessions.Ensure(sessionID); entry != nil {
-		entry.service.Cleanup()
+		entry.Service.Cleanup()
 	}
 }
 

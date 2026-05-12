@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"mobilevc/internal/config"
+	"mobilevc/internal/dashboard"
 	"mobilevc/internal/data"
 	"mobilevc/internal/gateway"
 	"mobilevc/internal/kernel"
@@ -30,12 +31,15 @@ func main() {
 
 	// Wire push notifications if configured.
 	if cfg.TTS.Enabled {
-		_ = push.NewAPNSService // reserved for APNs integration
+		_ = push.NewAPNsService // reserved for APNs integration
 	}
 
-	_ = k // kernel available for direct orchestration
+	// Mount the observability dashboard on /dashboard/.
+	dash := dashboard.NewHandler(k.Bus, k.MemStore, k, k.Feedback)
+	http.Handle("/dashboard/", dash)
 
 	http.Handle("/ws", handler)
+	logx.Info("main", "dashboard at http://localhost:%s/dashboard/", cfg.Port)
 	logx.Info("main", "mobilevc WebSocket server listening on :%s", cfg.Port)
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, nil))
 }

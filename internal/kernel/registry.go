@@ -323,6 +323,17 @@ type RuntimeSessionRegistry struct {
 	onCleanup    func(sessionID string)
 }
 
+// SessionIDs returns the set of session IDs currently in the registry.
+func (r *RuntimeSessionRegistry) SessionIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]string, 0, len(r.sessions))
+	for id := range r.sessions {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // NewRuntimeSessionRegistry creates a new registry.
 func NewRuntimeSessionRegistry(
 	newService func(string) *session.Service,

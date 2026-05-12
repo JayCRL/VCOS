@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentOS Dashboard</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#c9d1d9;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--amber:#d29922}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{background:var(--panel);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+header h1{font-size:18px;font-weight:600}
+.stats-bar{display:flex;gap:16px;flex-wrap:wrap}
+.stat{display:flex;align-items:center;gap:6px;font-size:13px}
+.stat .val{font-weight:600;font-variant-numeric:tabular-nums}
+.stat .lbl{color:var(--muted)}
+nav{display:flex;gap:0;background:var(--panel);border-bottom:1px solid var(--border);padding:0 20px}
+nav button{background:none;border:none;color:var(--muted);padding:10px 16px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+nav button:hover{color:var(--text)}
+nav button.active{color:var(--accent);border-bottom-color:var(--accent)}
+main{padding:20px;max-width:1400px;margin:0 auto}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;margin-bottom:16px}
+.panel-header{padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+.panel-body{padding:12px 16px;max-height:500px;overflow-y:auto}
+.panel-body.live-feed{max-height:400px;overflow-y:auto;font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;line-height:1.6}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:6px 12px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500;position:sticky;top:0;background:var(--panel)}
+td{padding:6px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:hover{background:rgba(255,255,255,.03)}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-admit{background:rgba(63,185,80,.2);color:var(--green)}
+.badge-defer{background:rgba(210,153,34,.2);color:var(--amber)}
+.badge-deny{background:rgba(248,81,73,.2);color:var(--red)}
+.badge-accept{background:rgba(63,185,80,.2);color:var(--green)}
+.badge-reject{background:rgba(248,81,73,.2);color:var(--red)}
+.badge-pending{background:rgba(88,166,255,.2);color:var(--accent)}
+.btn{padding:6px 14px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12px;cursor:pointer;transition:all .15s}
+.btn:hover{background:#21262d}
+.btn-accept{border-color:var(--green);color:var(--green)}
+.btn-accept:hover{background:rgba(63,185,80,.15)}
+.btn-reject{border-color:var(--red);color:var(--red)}
+.btn-reject:hover{background:rgba(248,81,73,.15)}
+.btn-group{display:flex;gap:6px}
+.filter-bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.filter-bar select,.filter-bar input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:12px}
+.filter-bar label{font-size:12px;color:var(--muted)}
+.event-row{display:flex;gap:8px;padding:2px 0;border-bottom:1px solid rgba(48,54,61,.5)}
+.event-src{min-width:48px;font-size:10px;text-transform:uppercase;color:var(--muted)}
+.event-topic{min-width:140px;color:var(--accent)}
+.event-sid{min-width:80px;color:var(--muted)}
+.event-body{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.memory-entry{border:1px solid var(--border);border-radius:4px;padding:10px;margin-bottom:8px}
+.memory-entry .meta{font-size:11px;color:var(--muted);margin-bottom:4px;display:flex;gap:12px}
+.memory-entry .content{font-size:13px;line-height:1.5;white-space:pre-wrap}
+.suggestion{border:1px solid var(--border);border-radius:4px;padding:12px;margin-bottom:8px}
+.suggestion .title{font-weight:600;margin-bottom:4px}
+.suggestion .desc{font-size:12px;color:var(--muted);margin-bottom:6px}
+.suggestion ul{margin:4px 0 8px 16px;font-size:12px}
+.empty{text-align:center;color:var(--muted);padding:40px;font-size:14px}
+.loading{text-align:center;color:var(--muted);padding:20px}
+.refresh{font-size:11px;color:var(--muted);cursor:pointer}
+.refresh:hover{color:var(--accent)}
+</style></head><body>
+<header>
+<h1>AgentOS Dashboard</h1>
+<div class="stats-bar" id="stats-bar">
+<span class="stat"><span class="val" id="stat-sessions">-</span><span class="lbl">Sessions</span></span>
+<span class="stat"><span class="val" id="stat-memory">-</span><span class="lbl">Memories</span></span>
+<span class="stat"><span class="val" id="stat-decisions">-</span><span class="lbl">Decisions</span></span>
+<span class="stat"><span class="val" id="stat-pending">-</span><span class="lbl">Pending</span></span>
+</div>
+</header>
+<nav>
+<button class="active" data-tab="overview">Overview</button>
+<button data-tab="events">Events</button>
+<button data-tab="memory">Memory</button>
+<button data-tab="decisions">Decisions</button>
+<button data-tab="evolution">Evolution</button>
+<button data-tab="console">Console</button>
+</nav>
+<main id="main"></main>
+<script>
+(function(){
+var activeTab='overview';
+var sseSource=null;
+var api=function(p,opts){return fetch('/dashboard/'+p,opts).then(function(r){return r.ok?r.json():Promise.reject(r.statusText)})};
+var byId=function(s){return document.getElementById(s)};
+var qs=function(s){return document.querySelector(s)};
+var qsa=function(s){return document.querySelectorAll(s)};
+var esc=function(s){if(!s)return'';var d=document.createElement('div');d.textContent=s;return d.innerHTML};
+var fmtTime=function(t){if(!t)return'-';return new Date(t).toLocaleTimeString()};
+
+function switchTab(name){
+	activeTab=name;
+	qsa('nav button').forEach(function(b){b.classList.toggle('active',b.dataset.tab===name)});
+	renderTab();
+}
+qsa('nav button').forEach(function(b){b.onclick=function(){switchTab(b.dataset.tab)}});
+
+function refreshStats(){
+	Promise.all([
+		api('sessions').then(function(j){return Array.isArray(j)?j.length:0}).catch(function(){return 0}),
+		api('memory?type=short_term').then(function(j){return j.total||0}).catch(function(){return 0}),
+		api('decisions').then(function(j){return Array.isArray(j)?j.length:0}).catch(function(){return 0}),
+		api('feedback/stats').then(function(j){return j.pending||0}).catch(function(){return 0})
+	]).then(function(r){
+		byId('stat-sessions').textContent=r[0];
+		byId('stat-memory').textContent=r[1];
+		byId('stat-decisions').textContent=r[2];
+		byId('stat-pending').textContent=r[3];
+	});
+}
+
+function renderTab(){
+	var el=byId('main');
+	switch(activeTab){
+		case 'overview':renderOverview(el);break;
+		case 'events':renderEvents(el);break;
+		case 'memory':renderMemory(el);break;
+		case 'decisions':renderDecisions(el);break;
+		case 'evolution':renderEvolution(el);break;
+		case 'console':renderConsole(el);break;
+	}
+}
+
+function renderOverview(el){
+	el.innerHTML='<div class="loading">Loading...</div>';
+	Promise.all([api('sessions'),api('feedback/stats'),api('memory?type=short_term'),api('decisions')]).then(function(r){
+		var sessions=r[0],fb=r[1],memTotal=r[2],decisions=r[3];
+		var sc=Array.isArray(sessions)?sessions.length:0;
+		var dc=Array.isArray(decisions)?decisions.length:0;
+		var recentDecs=Array.isArray(decisions)?decisions.slice(-8).reverse():[];
+		el.innerHTML='<div class="panel"><div class="panel-header">System Status</div><div class="panel-body"><table>'+
+		'<tr><th>Metric</th><th>Value</th></tr>'+
+		'<tr><td>Active Sessions</td><td>'+sc+'</td></tr>'+
+		'<tr><td>Memory Entries</td><td>'+memTotal+'</td></tr>'+
+		'<tr><td>Total Decisions</td><td>'+dc+'</td></tr>'+
+		'<tr><td>Feedback - Accepted</td><td>'+fb.accepted+'</td></tr>'+
+		'<tr><td>Feedback - Rejected</td><td>'+fb.rejected+'</td></tr>'+
+		'<tr><td>Feedback - Pending</td><td>'+fb.pending+'</td></tr>'+
+		'</table></div></div>'+
+		(recentDecs.length?'<div class="panel"><div class="panel-header">Recent Decisions <span class="refresh" onclick="renderTab()">refresh</span></div><div class="panel-body"><table>'+
+		'<tr><th>Time</th><th>Session</th><th>Outcome</th><th>Reason</th></tr>'+
+		recentDecs.map(function(d){return '<tr><td>'+fmtTime(d.time)+'</td><td>'+esc(d.sessionId||'-')+'</td><td><span class="badge badge-'+d.outcome+'">'+esc(d.outcome)+'</span></td><td>'+esc(d.reason||'')+(d.conflict?' (held by '+esc(d.conflict)+')':'')+'</td></tr>'}).join('')+
+		'</table></div></div>':'');
+	}).catch(function(e){el.innerHTML='<div class="empty">Error: '+e+'</div>'});
+}
+
+function renderEvents(el){
+	el.innerHTML='<div class="panel"><div class="panel-header">Live Event Stream <span class="refresh" id="sse-toggle" style="cursor:pointer">start SSE</span></div><div class="panel-body live-feed" id="ev-feed"><div class="empty">Click "start SSE" for live events</div></div></div>'+
+	'<div class="panel"><div class="panel-header">Recent Events <span class="refresh" onclick="renderTab()">refresh</span></div><div class="panel-body live-feed" id="ev-recent"><div class="loading">Loading...</div></div></div>';
+	byId('sse-toggle').onclick=toggleSSE;
+	api('events').then(function(events){
+		var feed=byId('ev-recent');
+		if(!Array.isArray(events)||!events.length){feed.innerHTML='<div class="empty">No events yet</div>';return}
+		feed.innerHTML=events.slice(-60).reverse().map(function(ev){
+			return '<div class="event-row"><span class="event-src">'+esc(ev.source||'')+'</span><span class="event-topic">'+esc(ev.topic||'')+'</span><span class="event-sid">'+esc(ev.sessionId||'')+'</span><span class="event-body">'+esc(JSON.stringify(ev.payload).slice(0,200))+'</span></div>';
+		}).join('');
+	}).catch(function(e){byId('ev-recent').innerHTML='<div class="empty">Error: '+e+'</div>'});
+}
+
+function toggleSSE(){
+	if(sseSource){sseSource.close();sseSource=null;byId('sse-toggle').textContent='start SSE';byId('ev-feed').innerHTML='<div class="empty">SSE stopped</div>';return}
+	sseSource=new EventSource('/dashboard/events?stream=1');
+	byId('sse-toggle').textContent='stop SSE';
+	var feed=byId('ev-feed');
+	feed.innerHTML='';
+	var max=100,lines=[];
+	sseSource.onmessage=function(e){
+		try{var env=JSON.parse(e.data);
+		lines.unshift('<div class="event-row"><span class="event-src">'+esc(env.source||'')+'</span><span class="event-topic">'+esc(env.topic||'')+'</span><span class="event-sid">'+esc(env.sessionId||'')+'</span><span class="event-body">'+esc(JSON.stringify(env.payload).slice(0,200))+'</span></div>');
+		if(lines.length>max)lines=lines.slice(0,max);
+		feed.innerHTML=lines.join('');
+		}catch(_){}
+	};
+	sseSource.onerror=function(){feed.innerHTML='<div class="empty">SSE connection lost. <span class="refresh" onclick="toggleSSE()">retry</span></div>';sseSource=null;byId('sse-toggle').textContent='start SSE'};
+}
+
+function renderMemory(el){
+	el.innerHTML='<div class="loading">Loading...</div>';
+	api('memory').then(function(data){
+		var entries=Array.isArray(data.entries)?data.entries:[];
+		if(!entries.length){el.innerHTML='<div class="empty">No memory entries</div>';return}
+		el.innerHTML='<div class="filter-bar"><label>Filter:</label><select id="mem-type-filter" onchange="renderMemory(document.getElementById(\'main\'))"><option value="">All Types</option><option value="short_term">Short Term</option><option value="long_term">Long Term</option><option value="project">Project</option></select></div>'+
+		entries.map(function(e){return '<div class="memory-entry"><div class="meta"><span><span class="badge badge-admit">'+esc(e.type||'')+'</span></span><span>'+esc(e.domain||'')+'</span><span>'+esc(e.source||'')+'</span><span>'+fmtTime(e.createdAt)+'</span></div><div style="font-weight:600;margin-bottom:4px">'+esc(e.title||'')+'</div><div class="content">'+esc((e.content||'').slice(0,500))+'</div></div>'}).join('');
+	}).catch(function(e){el.innerHTML='<div class="empty">Error: '+e+'</div>'});
+}
+
+function renderDecisions(el){
+	el.innerHTML='<div class="loading">Loading...</div>';
+	api('decisions').then(function(decisions){
+		if(!Array.isArray(decisions)||!decisions.length){el.innerHTML='<div class="empty">No decisions recorded</div>';return}
+		el.innerHTML='<div class="panel"><div class="panel-body"><table><tr><th>Time</th><th>Session</th><th>Outcome</th><th>Reason</th></tr>'+
+		decisions.slice().reverse().map(function(d){return '<tr><td>'+fmtTime(d.time)+'</td><td>'+esc(d.sessionId||'-')+'</td><td><span class="badge badge-'+d.outcome+'">'+esc(d.outcome)+'</span></td><td>'+esc(d.reason||'')+(d.conflict?' (held by '+esc(d.conflict)+')':'')+'</td></tr>'}).join('')+
+		'</table></div></div>';
+	}).catch(function(e){el.innerHTML='<div class="empty">Error: '+e+'</div>'});
+}
+
+function renderEvolution(el){
+	el.innerHTML='<div class="loading">Loading...</div>';
+	Promise.all([
+		api('feedback/pending').catch(function(){return []}),
+		api('feedback/history').catch(function(){return []}),
+		api('feedback/stats').catch(function(){return {total:0,accepted:0,rejected:0,pending:0}})
+	]).then(function(r){
+		var pending=r[0],history=r[1],stats=r[2];
+		var html='<div class="panel"><div class="panel-header">Feedback Stats</div><div class="panel-body"><table>'+
+		'<tr><td>Total</td><td>'+stats.total+'</td></tr><tr><td>Accepted</td><td>'+stats.accepted+'</td></tr><tr><td>Rejected</td><td>'+stats.rejected+'</td></tr><tr><td>Pending</td><td>'+stats.pending+'</td></tr>'+
+		'</table></div></div>';
+		if(pending.length){
+			html+='<div class="panel"><div class="panel-header">Pending Suggestions ('+pending.length+')</div><div class="panel-body">';
+			pending.forEach(function(s){
+				html+='<div class="suggestion" id="sug-'+s.id+'"><div class="title">'+esc(s.title)+'</div><div class="desc">'+esc(s.description)+' | confidence: '+(s.confidence*100).toFixed(0)+'% | source: '+esc(s.source)+'</div>';
+				if(s.learnings&&s.learnings.length)html+='<ul>'+s.learnings.map(function(l){return '<li>'+esc(l)+'</li>'}).join('')+'</ul>';
+				html+='<div class="btn-group"><button class="btn btn-accept" onclick="decideFeedback(\''+s.id+'\',\'accept\')">Accept</button><button class="btn btn-reject" onclick="decideFeedback(\''+s.id+'\',\'reject\')">Reject</button></div></div>';
+			});
+			html+='</div></div>';
+		}else{html+='<div class="panel"><div class="panel-body"><div class="empty">No pending suggestions</div></div></div>'}
+		if(history.length){
+			html+='<div class="panel"><div class="panel-header">Decision History ('+history.length+')</div><div class="panel-body"><table><tr><th>Time</th><th>Suggestion</th><th>Decision</th></tr>'+
+			history.slice().reverse().slice(0,50).map(function(r){return '<tr><td>'+fmtTime(r.timestamp)+'</td><td>'+esc(r.suggestionId)+'</td><td><span class="badge badge-'+(r.decision==='accept'?'admit':'deny')+'">'+esc(r.decision)+'</span></td></tr>'}).join('')+
+			'</table></div></div>';
+		}
+		el.innerHTML=html;
+	}).catch(function(e){el.innerHTML='<div class="empty">Error: '+e+'</div>'});
+}
+
+function renderConsole(el){
+	var sessionId='';
+	var sse=null;
+	var lines=[];
+	function append(text,cls){
+		lines.push('<div class="'+(cls||'event-body')+'">'+esc(text)+'</div>');
+		if(lines.length>200)lines=lines.slice(-200);
+		var out=byId('console-out');
+		if(out)out.innerHTML=lines.join('');
+	}
+	el.innerHTML='<div class="panel"><div class="panel-header">Task Dispatcher</div><div class="panel-body">'+
+	'<label style="font-size:12px;color:var(--muted)">Session (leave blank to create new)</label>'+
+	'<input id="con-sid" placeholder="session-id" style="width:100%;margin:4px 0 8px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:13px">'+
+	'<label style="font-size:12px;color:var(--muted)">Working Directory</label>'+
+	'<input id="con-cwd" value="." style="width:100%;margin:4px 0 8px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:13px">'+
+	'<label style="font-size:12px;color:var(--muted)">Message</label>'+
+	'<textarea id="con-msg" rows="3" placeholder="Type your instruction..." style="width:100%;margin:4px 0 8px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:13px;resize:vertical"></textarea>'+
+	'<div class="btn-group"><button class="btn btn-accept" onclick="sendConsole()">Send</button>'+
+	'<button class="btn" id="con-sse-btn" onclick="toggleConsoleSSE()">Connect SSE</button></div>'+
+	'<div style="font-size:11px;color:var(--muted);margin-top:4px" id="con-status"></div>'+
+	'</div></div>'+
+	'<div class="panel"><div class="panel-header">Output <span class="refresh" onclick="clearConsole()">clear</span></div>'+
+	'<div class="panel-body live-feed" id="console-out" style="min-height:200px;font-family:ui-monospace,monospace;font-size:12px;line-height:1.5">'+
+	'<div class="empty">Send a message or connect SSE to see events</div></div></div>';
+
+	window.sendConsole=function(){
+		var msg=byId('con-msg').value.trim();
+		if(!msg){alert('enter a message');return}
+		sessionId=byId('con-sid').value.trim();
+		var cwd=byId('con-cwd').value.trim()||'.';
+		byId('con-status').textContent='sending...';
+		fetch('/dashboard/console/exec',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sessionId,message:msg,cwd:cwd})})
+		.then(function(r){return r.json()})
+		.then(function(data){sessionId=data.sessionId;byId('con-sid').value=sessionId;byId('con-status').textContent='sent (session: '+sessionId+')';byId('con-msg').value=''})
+		.catch(function(e){byId('con-status').textContent='error: '+e});
+	};
+
+	window.toggleConsoleSSE=function(){
+		if(sse){sse.close();sse=null;byId('con-sse-btn').textContent='Connect SSE';byId('con-status').textContent='SSE stopped';return}
+		var sid=byId('con-sid').value.trim()||sessionId;
+		sse=new EventSource('/dashboard/events?stream=1');
+		byId('con-sse-btn').textContent='Disconnect SSE';
+		byId('con-status').textContent='SSE connected (session: '+(sid||'all')+')';
+		sse.onmessage=function(e){
+			try{var env=JSON.parse(e.data);
+			if(sid&&env.sessionId!==sid)return;
+			var txt=env.topic+': ';
+			if(typeof env.payload==='string')txt+=env.payload;
+			else if(env.payload&&env.payload.msg)txt+=env.payload.msg;
+			else if(env.payload&&env.payload.message)txt+=env.payload.message;
+			else txt+=JSON.stringify(env.payload).slice(0,300);
+			append(txt,'event-body');
+			}catch(_){}
+		};
+		sse.onerror=function(){byId('con-status').textContent='SSE connection lost'};
+	};
+
+	window.clearConsole=function(){
+		lines=[];var out=byId('console-out');if(out)out.innerHTML='<div class="empty">cleared</div>';
+	};
+}
+
+window.decideFeedback=function(id,decision){
+	var el=document.getElementById('sug-'+id);
+	if(!el)return;
+	el.style.opacity='0.5';
+	fetch('/dashboard/feedback/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({suggestionId:id,decision:decision})})
+	.then(function(r){return r.ok?r.json():Promise.reject(r.statusText)})
+	.then(function(){el.remove();refreshStats()})
+	.catch(function(e){el.style.opacity='1';alert('Error: '+e)});
+};
+
+refreshStats();
+setInterval(refreshStats,15000);
+renderTab();
+})();
+</script></body></html>
