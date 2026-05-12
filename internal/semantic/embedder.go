@@ -12,7 +12,7 @@
 //
 // This package ships interface definitions and lightweight default
 // implementations (Naive line chunker, Hash embedder, Noop summarizer /
-// index / analyzer) so the rest of AgentOS can depend on these contracts
+// index / analyzer) so the rest of VibeOS can depend on these contracts
 // today and swap in real Tree-sitter / SCIP / Joern integrations later
 // without touching call-sites.
 package semantic

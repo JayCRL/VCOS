@@ -17,7 +17,7 @@ type Service struct {
 
 // NewDefaultService wires the zero-dependency fallbacks: NaiveChunker,
 // HashEmbedder, NoopSummarizer, NoopSymbolIndex, NoopFlowAnalyzer. Suitable
-// for tests and for first-boot AgentOS without external tooling installed.
+// for tests and for first-boot VibeOS without external tooling installed.
 func NewDefaultService() *Service {
 	return &Service{
 		Chunker:    NewNaiveChunker(),

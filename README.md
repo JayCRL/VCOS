@@ -1,6 +1,6 @@
 <div align="center">
 
-# AgentOS
+# VibeOS
 
 **面向 AI 编码代理的事件驱动操作系统内核**
 
@@ -42,7 +42,7 @@
 
 ## 🚀 项目简介
 
-AgentOS 把"AI 编码代理"看作一台操作系统来构建,而不是一段调用 LLM 的应用代码。
+VibeOS 把"AI 编码代理"看作一台操作系统来构建,而不是一段调用 LLM 的应用代码。
 它在 Claude / Codex / Gemini 这类 CLI 工具之上,补齐了 Agent 长期协作所需要的全部基础设施:
 
 - **调度内核**:全局事件总线 + 意图调度器 + 进程看门人 + 锁管理器,统一治理并发与超时;
@@ -74,9 +74,9 @@ AgentOS 把"AI 编码代理"看作一台操作系统来构建,而不是一段调
 ## 🏛 架构总览
 
 <div align="center">
-  <img src="docs/assets/architecture.png" alt="AgentOS 模块依赖与数据流" width="780" />
+  <img src="docs/assets/architecture.png" alt="VibeOS 模块依赖与数据流" width="780" />
   <br/>
-  <sub>AgentOS 模块依赖与数据流示意图(进阶版)。<a href="docs/design/architecture.md">查看详细说明 →</a></sub>
+  <sub>VibeOS 模块依赖与数据流示意图(进阶版)。<a href="docs/design/architecture.md">查看详细说明 →</a></sub>
 </div>
 
 文字版分层:
@@ -156,8 +156,8 @@ AgentOS 把"AI 编码代理"看作一台操作系统来构建,而不是一段调
 ### 30 秒上手
 
 ```bash
-git clone https://github.com/<your-org>/AgentOS.git
-cd AgentOS
+git clone https://github.com/JayCRL/VibeOS.git
+cd VibeOS
 go build ./...
 
 # 运行 P1–P5 端到端联调
@@ -352,7 +352,7 @@ go test ./internal/dashboard/
 
 ## 🙏 鸣谢
 
-AgentOS 站在以下生态肩膀上:
+VibeOS 站在以下生态肩膀上:
 
 - **Claude Code / Codex / Gemini CLI** — AI 代理执行后端
 - **Tree-sitter · SCIP · Joern** — 代码语义分层目标后端
@@ -364,5 +364,5 @@ AgentOS 站在以下生态肩膀上:
 ---
 
 <div align="center">
-  <sub>AgentOS · 把 AI 编码代理做成一台操作系统。</sub>
+  <sub>VibeOS · 把 AI 编码代理做成一台操作系统。</sub>
 </div>
