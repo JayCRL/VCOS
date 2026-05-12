@@ -4,13 +4,13 @@ import (
 	"log"
 	"net/http"
 
-	"mobilevc/internal/config"
-	"mobilevc/internal/dashboard"
-	"mobilevc/internal/data"
-	"mobilevc/internal/gateway"
-	"mobilevc/internal/kernel"
-	"mobilevc/internal/logx"
-	"mobilevc/internal/push"
+	"mobilevc/support/config"
+	"mobilevc/cognition/dashboard"
+	"mobilevc/data"
+	"mobilevc/gateway"
+	"mobilevc/kernel"
+	"mobilevc/support/logx"
+	"mobilevc/support/push"
 )
 
 func main() {

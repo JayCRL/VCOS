@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"strings"
 
-	"mobilevc/internal/data"
-	"mobilevc/internal/engine"
-	"mobilevc/internal/kernel"
-	"mobilevc/internal/protocol"
-	"mobilevc/internal/session"
+	"mobilevc/data"
+	"mobilevc/engine"
+	"mobilevc/kernel"
+	"mobilevc/protocol"
+	"mobilevc/session"
 )
 
 func main() {
