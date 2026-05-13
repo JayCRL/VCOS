@@ -30,7 +30,11 @@
 基础 session/ engine/ protocol/ data/ gateway/ support/
 ```
 
-> 架构全景图见 [`docs/assets/architecture.png`](docs/assets/architecture.png) · 设计信源 [`docs/design/architecture.md`](docs/design/architecture.md)
+<div align="center">
+  <img src="docs/assets/architecture.png" alt="VCOS 模块依赖与数据流" width="780" />
+  <br/>
+  <sub>VCOS 模块依赖与数据流示意图(进阶版) · <a href="docs/design/architecture.md">设计信源 →</a></sub>
+</div>
 
 ## 层 1 · cognition/ — 交互与认知接口
 
