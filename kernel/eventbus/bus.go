@@ -104,6 +104,7 @@ func (b *memBus) Subscribe(name string, f Filter, h Handler) Subscription {
 		handler: h,
 		ch:      make(chan Envelope, b.opts.SubscriberBuffer),
 		done:    make(chan struct{}),
+		stop:    make(chan struct{}),
 		bus:     b,
 	}
 	b.subs[id] = sub
@@ -127,7 +128,6 @@ func (b *memBus) detach(id string) {
 func (b *memBus) Close() error {
 	b.closeOnce.Do(func() {
 		close(b.stopped)
-		// drain inbox by closing it; dispatcher exits when stopped fires.
 		b.mu.Lock()
 		subs := make([]*subscription, 0, len(b.subs))
 		for _, s := range b.subs {
@@ -170,6 +170,7 @@ type subscription struct {
 	handler Handler
 	ch      chan Envelope
 	done    chan struct{}
+	stop    chan struct{} // closed to signal shutdown; ch is never closed, avoiding ch-close vs ch-send data race
 	bus     *memBus
 
 	dropped     atomic.Uint64
@@ -189,15 +190,20 @@ func (s *subscription) Close() {
 
 func (s *subscription) shutdown() {
 	s.closeOnce.Do(func() {
-		close(s.ch)
-		<-s.done
+		close(s.stop)
 	})
+	<-s.done
 }
 
 // Dropped returns the number of envelopes shed because the subscriber was slow.
 func (s *subscription) Dropped() uint64 { return s.dropped.Load() }
 
 func (s *subscription) deliver(env Envelope, timeout time.Duration) {
+	select {
+	case <-s.stop:
+		return
+	default:
+	}
 	select {
 	case s.ch <- env:
 		return
@@ -209,16 +215,25 @@ func (s *subscription) deliver(env Envelope, timeout time.Duration) {
 	case s.ch <- env:
 	case <-t.C:
 		s.dropped.Add(1)
+	case <-s.stop:
 	}
 }
 
 func (s *subscription) run() {
 	defer close(s.done)
-	for env := range s.ch {
-		func() {
-			defer func() { _ = recover() }()
-			s.handler(env)
-		}()
+	for {
+		select {
+		case <-s.stop:
+			return
+		case env, ok := <-s.ch:
+			if !ok {
+				return
+			}
+			func() {
+				defer func() { _ = recover() }()
+				s.handler(env)
+			}()
+		}
 	}
 }
 
