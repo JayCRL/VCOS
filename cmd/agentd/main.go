@@ -25,10 +25,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create the agent kernel.
 	k := kernel.New(store)
+	defer k.Stop()
 
-	// Create a new session.
 	summary, err := store.CreateSession(ctx, "CLI session")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create session: %v\n", err)
@@ -36,11 +35,19 @@ func main() {
 	}
 	sessionID := summary.ID
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+
 	svc := session.NewService(sessionID, session.Dependencies{
 		NewExecRunner: k.NewExecRunner,
 		NewPtyRunner:  k.NewPtyRunner,
 	})
 	defer svc.Cleanup()
+
+	cli := &cliState{k: k, sessionID: sessionID, cwd: cwd}
+	defer cli.shutdown()
 
 	// cliEmit formats kernel events for terminal output.
 	cliEmit := func(event any) {
@@ -67,8 +74,8 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "agentd ready (session: %s)\n", sessionID)
-	fmt.Fprintf(os.Stderr, "Type your message and press Enter. /exit to quit.\n\n")
+	fmt.Fprintf(os.Stderr, "agentd ready (session: %s, cwd: %s)\n", sessionID, cwd)
+	fmt.Fprintf(os.Stderr, "Type /help for VCOS commands, or send free text to claude. /exit to quit.\n\n")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -76,22 +83,19 @@ func main() {
 		if text == "" {
 			continue
 		}
-		if text == "/exit" || text == "/quit" {
-			break
-		}
-		if text == "/help" {
-			fmt.Println("/exit, /quit — quit")
-			fmt.Println("/help — show this help")
-			fmt.Println("anything else — send to Claude")
+
+		if handled, exit := cli.handleSlash(ctx, text); handled {
+			if exit {
+				break
+			}
 			continue
 		}
 
 		svc.RecordUserInput(text)
-
 		err := svc.SendInputOrResume(ctx, sessionID,
 			session.ExecuteRequest{
 				Command: "claude",
-				CWD:     ".",
+				CWD:     cwd,
 				Mode:    engine.ModePTY,
 			},
 			session.InputRequest{Data: text + "\n"},

@@ -99,3 +99,52 @@ CreateSession(title="design cache", cwd="/app")
 - 可视化 UI 组件(只给 HTML 骨架)
 - Vibe 自动学习/自适应(留 P5 反馈闭环)
 - Intake 深度语义分析(留 P4 进化引擎)
+
+---
+
+## P3.5 · 桌面 GUI 向导(`cmd/agentui` + `desktop/wizard`)
+
+P3 把交互层骨架(intake / vibe / dashboard)做完了,但**面向终端用户的入口**仍然只有 `cmd/agentd`(简陋 REPL)和 `dashboard`(开发者观测)。P3.5 在 P3 之上加一个**桌面 GUI**,作为用户唯一入口。
+
+**技术栈**:Wails v2 + React 18 + TypeScript 5。
+
+**核心约定**:**向导的每一阶段产物全部直接落到 Memory**,不引入新实体、不新增 Store。MOE 在后续 agent 执行时按 sessionID + cwd 自动召回这些 wizard-* 条目作为上下文。
+
+### 阶段 ↔ Memory 映射
+
+| Stage | ID 模板 | Type | Domain | Metadata.stage |
+|---|---|---|---|---|
+| 1 用户意图 | `wizard-user-intent-<sid>` | LongTerm | Dialogue | `user_intent` |
+| 2 项目意图 | `wizard-project-intent-<sid>` + intake 自带 3 条 | Project | Task | `project_intent` |
+| 3 UI 组件 | `wizard-ui-component-<sid>-<cid>`(N) + `wizard-ui-prompt-<sid>` | Project | Code | `ui_spec` / `ui_prompt` |
+| 4 技术方案 | `wizard-tech-plan-<sid>` | Project | Task | `tech_plan` |
+| 5 权限声明 | `wizard-permissions-<sid>` | Project | Task | `permissions` |
+| 6 决策风格 | `vibe-state-<sid>`(复用) + `wizard-decision-style-<sid>` | LongTerm | Dialogue | `decision_style` |
+| 游标 | `wizard-cursor-<sid>` | ShortTerm | Dialogue | `cursor` |
+
+Metadata 共有字段:`stage` · `wizardVersion: "v1"` · `createdBy: "agentui"`。
+ID/Schema 集中定义在 `desktop/wizard/stage.go`,写入/读取通过 `desktop/wizard/writer.go` + `reader.go`。
+
+### 决策风格
+
+执行阶段三档,由 `wizard-decision-style-<sid>` 精确表达,`vibe.Proactivity` 做粗粒度同步(Passive / Balanced / Active):
+
+- **step-by-step**:所有 `permission_request` / `review_state` / `plan_request` / `interaction_request` 都浮到 GUI 待审栏,用户点 Accept/Reject/Adjust 解锁。
+- **hybrid**:仅 `permission_request` / `interaction_request` 需要人工,`review_state` / `plan_request` 自动 accept。
+- **autonomous**:全部自动 accept,任务结束/失败再桌面通知。
+
+GUI 端的解锁通过 `session.SendPermissionDecision` / `session.ReviewDecision` / `session.PlanDecision` 三个现有方法直接回灌 session.Service。
+
+### 事件流
+
+`kernel/eventbus.Bus.Subscribe(Filter{SessionIDs:[sid]}, ...)` 在 `cmd/agentui/events.go` 桥接到 Wails 的 `runtime.EventsEmit(ctx, "agent:<sid>", env)`,前端用 `window.runtime.EventsOn` 订阅。
+
+### 通知
+
+`desktop/notify`(beeep)+ `cmd/agentui/notify.go`:订阅整个 bus,在 `ErrorEvent` / `AgentStateEvent(done|failed)` / `PromptRequestEvent` / `InteractionRequestEvent` 时弹原生桌面通知,3 秒内同 (sid, kind) 去重。
+
+### 不破坏 P3
+
+- 不动 `cognition/*`、`kernel/*`、`memory/*`、`evolution/*` 任何代码
+- `cmd/agentd` 保留为开发调试 REPL
+- README 的"五层"叙述保持不变 — P3.5 是面向用户的工具入口,不是新一层

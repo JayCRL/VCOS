@@ -1,0 +1,2 @@
+# 占位:Wails 编译时会用 //go:embed all:frontend/dist 嵌入这个目录。
+# 在 wails build 之前先放一个占位文件,确保 embed 指令不报错。

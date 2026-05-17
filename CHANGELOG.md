@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Desktop GUI wizard (`cmd/agentui` + `desktop/wizard` + `desktop/notify`): Wails v2 + React + TypeScript front-end that walks the user through user intent → project intent → UI spec → tech plan → permissions → decision style → execution. Every stage product is persisted as a `memory.Entry` (no bespoke entity); MOE picks them up automatically during agent execution. Decision style (`step-by-step` / `hybrid` / `autonomous`) controls how often the agent pauses for user approval. Desktop-native notifications via beeep on completion / failure / pending approval.
 - P0 global event bus (`kernel/eventbus`) with classified sources (User / Session / Kernel / External)
 - P1 scheduling trio (`kernel/scheduler`, `kernel/watchdog`, `kernel/lockmgr`): intent scheduler, watchdog, exclusive session lock
 - P2 Memory + MOE (`memory`, `memory/moe`): MemStore / SQLiteStore + Type × Domain rule-based routing

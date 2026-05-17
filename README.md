@@ -148,9 +148,15 @@ go build ./...
 # 启动 WebSocket 服务器(移动端)
 AUTH_TOKEN=dev go run ./cmd/mobilevc
 
-# 启动 CLI 守护进程(桌面)
+# 启动桌面 GUI(推荐 · Wails + React)
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+cd cmd/agentui && wails dev
+
+# 启动 CLI 守护进程(开发/调试 REPL)
 go run ./cmd/agentd
 ```
+
+`cmd/agentui` 是面向终端用户的桌面入口:七步向导(用户意图 → 项目意图 → UI 设计 → 技术方案 → 权限 → 决策风格 → 执行),所有阶段产物落到 Memory + MOE,后续 agent 自动召回。详见 [docs/design/p3-interaction.md](docs/design/p3-interaction.md) 的 P3.5 节。
 
 ### 作为库使用
 
@@ -215,7 +221,11 @@ VCOS/
 │   └── tts/          #   语音合成
 ├── cmd/
 │   ├── mobilevc/     # WebSocket 服务器入口
-│   └── agentd/       # CLI 守护进程入口
+│   ├── agentd/       # CLI 守护进程入口(开发/调试)
+│   └── agentui/      # 桌面 GUI 入口 · Wails + React (用户主入口)
+├── desktop/          # GUI 辅助层(不算第六层,只是入口工具)
+│   ├── wizard/       #   向导阶段 Memory schema + 读写
+│   └── notify/       #   桌面原生通知 (beeep)
 └── docs/
     ├── design/       # 架构设计文档
     └── assets/       # 架构图

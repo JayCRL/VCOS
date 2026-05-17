@@ -1,1 +1,10 @@
 .DS_Store
+
+# cmd/agentui build artifacts
+cmd/agentui/build/
+cmd/agentui/frontend/node_modules/
+cmd/agentui/frontend/dist/*
+!cmd/agentui/frontend/dist/.gitkeep
+cmd/agentui/frontend/wailsjs/
+cmd/agentui/frontend/package.json.md5
+cmd/agentui/frontend/tsconfig.tsbuildinfo
