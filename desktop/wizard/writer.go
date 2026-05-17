@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"mobilevc/cognition/intake"
+	"mobilevc/desktop/scan"
 	"mobilevc/memory"
 )
 
@@ -35,12 +36,19 @@ func WriteUserIntent(ctx context.Context, store memory.Store, sid, cwd, text str
 
 // WriteProjectIntent persists Stage 2. The intake.CognitiveProfile is
 // produced by intake.SessionIntake.Run, which also seeds three companion
-// entries (intake-project/goal/pref-<sid>) that the MOE will pick up.
-func WriteProjectIntent(ctx context.Context, store memory.Store, sid, cwd, prompt, userNote string, profile intake.CognitiveProfile) error {
+// entries (intake-project/goal/pref-<sid>) that the MOE will pick up. The
+// optional semantic field carries the L3 deep-scan summary produced by
+// `claude --print`.
+func WriteProjectIntent(ctx context.Context, store memory.Store, sid, cwd, prompt, userNote string, profile intake.CognitiveProfile, semantic *scan.Semantic) error {
 	if store == nil || sid == "" {
 		return fmt.Errorf("write project intent: nil store or empty sid")
 	}
-	payload := ProjectIntentPayload{Prompt: prompt, UserNote: userNote, Profile: profile}
+	payload := ProjectIntentPayload{
+		Prompt:   prompt,
+		UserNote: userNote,
+		Profile:  profile,
+		Semantic: semantic,
+	}
 	body, _ := json.Marshal(payload)
 	now := time.Now().UTC()
 	return store.Upsert(ctx, memory.Entry{
@@ -101,6 +109,31 @@ func WriteUIPrompt(ctx context.Context, store memory.Store, sid, cwd, prompt str
 		SessionID: sid,
 		CWD:       cwd,
 		Metadata:  commonMeta(StageUIPrompt),
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+}
+
+// WriteInteractionLogic persists Stage 3.5 — the user's description of
+// how each UI element behaves on interaction.
+func WriteInteractionLogic(ctx context.Context, store memory.Store, sid, cwd string, p InteractionLogicPayload) error {
+	if store == nil || sid == "" {
+		return fmt.Errorf("write interaction logic: nil store or empty sid")
+	}
+	body, _ := json.Marshal(p)
+	now := time.Now().UTC()
+	return store.Upsert(ctx, memory.Entry{
+		ID:        IDInteractionLogic(sid),
+		Type:      memory.TypeProject,
+		Domain:    memory.DomainTask,
+		Title:     "interaction logic",
+		Content:   string(body),
+		Source:    memory.SourceUser,
+		SessionID: sid,
+		CWD:       cwd,
+		Metadata: commonMeta(StageInteractionLogic, memory.Metadata{
+			"flowCount": len(p.Flows),
+		}),
 		CreatedAt: now,
 		UpdatedAt: now,
 	})

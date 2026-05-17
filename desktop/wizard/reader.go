@@ -12,15 +12,16 @@ import (
 // Each field is a pointer so the GUI can tell "not yet completed" (nil) from
 // "completed with zero value".
 type Snapshot struct {
-	SessionID      string                  `json:"sessionId"`
-	Cursor         *CursorPayload          `json:"cursor,omitempty"`
-	UserIntent     *UserIntentPayload      `json:"userIntent,omitempty"`
-	ProjectIntent  *ProjectIntentPayload   `json:"projectIntent,omitempty"`
-	UIComponents   []UIComponentPayload    `json:"uiComponents,omitempty"`
-	UIPrompt       *UIPromptPayload        `json:"uiPrompt,omitempty"`
-	TechPlan       *TechPlanPayload        `json:"techPlan,omitempty"`
-	Permissions    *PermissionsPayload     `json:"permissions,omitempty"`
-	DecisionStyle  *DecisionStylePayload   `json:"decisionStyle,omitempty"`
+	SessionID        string                   `json:"sessionId"`
+	Cursor           *CursorPayload           `json:"cursor,omitempty"`
+	UserIntent       *UserIntentPayload       `json:"userIntent,omitempty"`
+	ProjectIntent    *ProjectIntentPayload    `json:"projectIntent,omitempty"`
+	UIComponents     []UIComponentPayload     `json:"uiComponents,omitempty"`
+	UIPrompt         *UIPromptPayload         `json:"uiPrompt,omitempty"`
+	InteractionLogic *InteractionLogicPayload `json:"interactionLogic,omitempty"`
+	TechPlan         *TechPlanPayload         `json:"techPlan,omitempty"`
+	Permissions      *PermissionsPayload      `json:"permissions,omitempty"`
+	DecisionStyle    *DecisionStylePayload    `json:"decisionStyle,omitempty"`
 }
 
 // LoadSnapshot rehydrates every wizard product for a session by scanning
@@ -66,6 +67,11 @@ func LoadSnapshot(ctx context.Context, store memory.Store, sid string) (Snapshot
 			var p UIPromptPayload
 			if err := json.Unmarshal([]byte(e.Content), &p); err == nil {
 				snap.UIPrompt = &p
+			}
+		case e.ID == IDInteractionLogic(sid):
+			var p InteractionLogicPayload
+			if err := json.Unmarshal([]byte(e.Content), &p); err == nil {
+				snap.InteractionLogic = &p
 			}
 		case e.ID == IDTechPlan(sid):
 			var p TechPlanPayload

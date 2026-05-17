@@ -7,6 +7,7 @@ export type Stage =
   | "project_intent"
   | "ui_spec"
   | "ui_prompt"
+  | "interaction_logic"
   | "tech_plan"
   | "permissions"
   | "decision_style"
@@ -50,6 +51,7 @@ export interface ProjectIntentPayload {
   prompt: string;
   userNote?: string;
   profile: CognitiveProfile;
+  semantic?: Semantic;
 }
 
 export interface UIComponentPayload {
@@ -64,6 +66,74 @@ export interface UIComponentPayload {
 export interface UIPromptPayload {
   prompt: string;
   componentIds: string[];
+}
+
+export interface InteractionFlow {
+  id: string;
+  trigger: string;
+  componentId?: string;
+  action: string;
+  description?: string;
+}
+
+export interface InteractionLogicPayload {
+  flows: InteractionFlow[];
+  notes?: string;
+}
+
+// —— Stage 2 scan products ——
+
+export interface TreeNode {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  modTime: string;
+  children?: TreeNode[];
+}
+
+export interface EntryPoint {
+  path: string;
+  purpose: string;
+}
+
+export interface ScanModule {
+  name: string;
+  path: string;
+  responsibility: string;
+}
+
+export interface DepEdge {
+  from: string;
+  to: string;
+  kind: string;
+}
+
+export interface Hotspot {
+  path: string;
+  reason: string;
+}
+
+export interface Semantic {
+  summary: string;
+  language: string;
+  entryPoints: EntryPoint[];
+  modules: ScanModule[];
+  deps: DepEdge[];
+  hotspots: Hotspot[];
+}
+
+export interface ScanEvent {
+  phase: "thinking" | "done" | "error";
+  semantic?: Semantic;
+  message?: string;
+  raw?: string;
+}
+
+export interface DraftEvent {
+  phase: "thinking" | "chunk" | "done" | "error";
+  text?: string;
+  message?: string;
 }
 
 export interface TechPlanPayload {
@@ -90,6 +160,7 @@ export interface WizardSnapshot {
   projectIntent?: ProjectIntentPayload;
   uiComponents?: UIComponentPayload[];
   uiPrompt?: UIPromptPayload;
+  interactionLogic?: InteractionLogicPayload;
   techPlan?: TechPlanPayload;
   permissions?: PermissionsPayload;
   decisionStyle?: DecisionStylePayload;
@@ -115,6 +186,55 @@ export interface FeedbackSuggestion {
   CreatedAt: string;
 }
 
+// —— Stage 3 AI tweak ——
+
+export interface APIKeyStatus {
+  configured: boolean;
+  source: "env" | "file" | "";
+  tail?: string;
+  baseURL?: string;
+}
+
+export type UIPatchOp = "rename" | "recolor" | "add" | "remove";
+
+export interface UIPatch {
+  componentId?: string;
+  op: UIPatchOp;
+  value?: Record<string, unknown>;
+}
+
+export interface LLMComponent {
+  id: string;
+  name: string;
+  kind: string;
+  description?: string;
+}
+
+export interface ComponentRename {
+  componentId: string;
+  name: string;
+}
+
+export interface UISuggestion {
+  templateId: string;
+  accent: string;
+  font: string;
+  rationale?: string;
+  componentRenames?: ComponentRename[];
+}
+
+export interface FlowDraft {
+  trigger: string;
+  action: string;
+  description?: string;
+  componentId?: string;
+}
+
+export interface FlowDraftSet {
+  flows: FlowDraft[];
+  notes?: string;
+}
+
 declare global {
   interface Window {
     go: {
@@ -126,12 +246,20 @@ declare global {
           SubmitProjectIntent(
             sid: string,
             prompt: string,
-            userNote: string
+            userNote: string,
+            semantic: Semantic | null
           ): Promise<CognitiveProfile>;
+          ScanPhysical(cwd: string): Promise<TreeNode>;
+          ScanSemantic(sid: string, cwd: string): Promise<void>;
+          DraftTechPlan(sid: string): Promise<void>;
           SubmitUISpec(
             sid: string,
             components: UIComponentPayload[],
             mappingPrompt: string
+          ): Promise<void>;
+          SubmitInteractionLogic(
+            sid: string,
+            payload: InteractionLogicPayload
           ): Promise<void>;
           SubmitTechPlan(
             sid: string,
@@ -157,6 +285,17 @@ declare global {
             decision: string,
             adjusted: string
           ): Promise<void>;
+          GetAPIKeyStatus(): Promise<APIKeyStatus>;
+          SetAPIConfig(key: string, baseURL: string): Promise<void>;
+          AdjustUIWithAI(
+            prompt: string,
+            accent: string,
+            templateName: string,
+            components: LLMComponent[]
+          ): Promise<UIPatch[]>;
+          SuggestUI(sid: string): Promise<UISuggestion>;
+          SuggestInteractionFlows(sid: string): Promise<FlowDraftSet>;
+          SuggestArchitecture(sid: string): Promise<Semantic>;
         };
       };
     };

@@ -6,16 +6,21 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"mobilevc/cognition/intake"
 	"mobilevc/cognition/vibe"
 	"mobilevc/data"
+	"mobilevc/desktop/draft"
+	"mobilevc/desktop/scan"
 	"mobilevc/desktop/wizard"
 	"mobilevc/engine"
 	"mobilevc/evolution/feedback"
 	"mobilevc/kernel"
 	"mobilevc/protocol"
 	"mobilevc/session"
+
+	"mobilevc/cmd/agentui/llm"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -41,6 +46,7 @@ func NewApp(k *kernel.Kernel) *App {
 
 func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
+	enrichPATH(ctx)
 	wailsRuntime.LogInfo(ctx, "agentui starting")
 }
 
@@ -120,7 +126,7 @@ func (a *App) LoadWizardState(sid string) (wizard.Snapshot, error) {
 	return wizard.LoadSnapshot(a.ctx, a.kernel.MemStore, sid)
 }
 
-func (a *App) SubmitProjectIntent(sid, prompt, userNote string) (intake.CognitiveProfile, error) {
+func (a *App) SubmitProjectIntent(sid, prompt, userNote string, semantic *scan.Semantic) (intake.CognitiveProfile, error) {
 	if sid == "" {
 		return intake.CognitiveProfile{}, fmt.Errorf("sid is required")
 	}
@@ -129,13 +135,204 @@ func (a *App) SubmitProjectIntent(sid, prompt, userNote string) (intake.Cognitiv
 	if err != nil {
 		return profile, fmt.Errorf("intake: %w", err)
 	}
-	if err := wizard.WriteProjectIntent(a.ctx, a.kernel.MemStore, sid, cwd, prompt, userNote, profile); err != nil {
+	if err := wizard.WriteProjectIntent(a.ctx, a.kernel.MemStore, sid, cwd, prompt, userNote, profile, semantic); err != nil {
 		return profile, err
 	}
 	if err := wizard.Advance(a.ctx, a.kernel.MemStore, sid, wizard.StageProjectIntent, wizard.StageUISpec); err != nil {
 		return profile, err
 	}
 	return profile, nil
+}
+
+// ScanPhysical returns the L1 file tree rooted at cwd (defaults to the GUI's
+// working directory if empty). Fast (< 2s for typical projects); fully
+// synchronous.
+func (a *App) ScanPhysical(cwd string) (*scan.TreeNode, error) {
+	if strings.TrimSpace(cwd) == "" {
+		cwd, _ = os.Getwd()
+	}
+	return scan.WalkPhysical(cwd)
+}
+
+// ScanSemantic invokes `claude --print` to produce the L3 semantic summary
+// for the given working directory. Non-blocking — runs in a goroutine and
+// pushes lifecycle events on the frontend channel "scan:<sid>":
+//
+//	{phase: "thinking"}     immediately
+//	{phase: "done",     semantic: Semantic}   on success
+//	{phase: "error",    message: string, raw: string}  on failure
+func (a *App) ScanSemantic(sid, cwd string) error {
+	if sid == "" {
+		return fmt.Errorf("sid is required")
+	}
+	if strings.TrimSpace(cwd) == "" {
+		cwd, _ = os.Getwd()
+	}
+	channel := "scan:" + sid
+	wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{"phase": "thinking"})
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		sem, raw, err := scan.RunSemantic(ctx, cwd)
+		if err != nil {
+			wailsRuntime.LogErrorf(a.ctx, "scan semantic: %v", err)
+			wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{
+				"phase":   "error",
+				"message": err.Error(),
+				"raw":     raw,
+			})
+			return
+		}
+		wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{
+			"phase":    "done",
+			"semantic": sem,
+		})
+	}()
+	return nil
+}
+
+// GetAPIKeyStatus describes whether the Anthropic API key is currently
+// configured (env var or local config file). The GUI uses this to decide
+// whether to show "configure key" UI before invoking AdjustUIWithAI.
+func (a *App) GetAPIKeyStatus() llm.KeyStatus {
+	return llm.Status()
+}
+
+// SetAPIConfig persists Anthropic API key + optional baseURL into
+// ~/.mobilevc/agentui-config.json (0600). Pass empty strings to clear.
+func (a *App) SetAPIConfig(key, baseURL string) error {
+	return llm.SaveConfig(key, baseURL)
+}
+
+// AdjustUIWithAI calls Anthropic with a tool_use forcing apply_patches output,
+// then returns the parsed patches. The frontend applies them locally without
+// a follow-up round-trip.
+func (a *App) AdjustUIWithAI(prompt, accent, templateName string, components []llm.Component) ([]llm.Patch, error) {
+	key, src := llm.LoadKey()
+	if key == "" || src == llm.KeyAbsent {
+		return nil, fmt.Errorf("anthropic api key not configured")
+	}
+	baseURL := llm.LoadBaseURL()
+	client := llm.NewClient(key, baseURL)
+	ctx, cancel := context.WithTimeout(a.ctx, 60*time.Second)
+	defer cancel()
+	return client.Adjust(ctx, llm.AdjustRequest{
+		UserPrompt:   prompt,
+		Components:   components,
+		Accent:       accent,
+		TemplateName: templateName,
+	})
+}
+
+// SuggestUI picks a template + accent + font for the user based on Stage 1/2
+// products. Called by the GUI when entering Stage 3 with no prior selection.
+func (a *App) SuggestUI(sid string) (*llm.UISuggestion, error) {
+	if sid == "" {
+		return nil, fmt.Errorf("sid is required")
+	}
+	client, err := a.llmClient()
+	if err != nil {
+		return nil, err
+	}
+	snap, err := wizard.LoadSnapshot(a.ctx, a.kernel.MemStore, sid)
+	if err != nil {
+		return nil, fmt.Errorf("load snapshot: %w", err)
+	}
+	req := llm.SuggestUIRequest{}
+	if snap.UserIntent != nil {
+		req.UserIntent = snap.UserIntent.Text
+	}
+	if snap.ProjectIntent != nil {
+		req.ProjectPrompt = snap.ProjectIntent.Prompt
+		req.UserNote = snap.ProjectIntent.UserNote
+		if sem := snap.ProjectIntent.Semantic; sem != nil {
+			req.Language = sem.Language
+			req.Summary = sem.Summary
+			for _, m := range sem.Modules {
+				req.ModuleNames = append(req.ModuleNames, m.Name)
+			}
+		}
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 60*time.Second)
+	defer cancel()
+	return client.SuggestUI(ctx, req)
+}
+
+// SuggestInteractionFlows generates 5-8 starter flows based on the user's
+// intent and the UI components they've already locked in.
+func (a *App) SuggestInteractionFlows(sid string) (*llm.FlowDraftSet, error) {
+	if sid == "" {
+		return nil, fmt.Errorf("sid is required")
+	}
+	client, err := a.llmClient()
+	if err != nil {
+		return nil, err
+	}
+	snap, err := wizard.LoadSnapshot(a.ctx, a.kernel.MemStore, sid)
+	if err != nil {
+		return nil, fmt.Errorf("load snapshot: %w", err)
+	}
+	req := llm.SuggestFlowsRequest{}
+	if snap.UserIntent != nil {
+		req.UserIntent = snap.UserIntent.Text
+	}
+	for _, c := range snap.UIComponents {
+		req.Components = append(req.Components, llm.Component{
+			ID:          c.ID,
+			Name:        c.Name,
+			Kind:        c.Kind,
+			Description: c.Description,
+		})
+		if tn, ok := c.Props["templateName"].(string); ok && tn != "" && req.TemplateName == "" {
+			req.TemplateName = tn
+		}
+		if tn, ok := c.Props["template"].(string); ok && tn != "" && req.TemplateName == "" {
+			req.TemplateName = tn
+		}
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
+	defer cancel()
+	return client.SuggestFlows(ctx, req)
+}
+
+// SuggestArchitecture proposes a starter Semantic for a greenfield project
+// (the cwd has no readable files). The GUI calls this from Stage 2 when the
+// physical tree is essentially empty.
+func (a *App) SuggestArchitecture(sid string) (*scan.Semantic, error) {
+	if sid == "" {
+		return nil, fmt.Errorf("sid is required")
+	}
+	client, err := a.llmClient()
+	if err != nil {
+		return nil, err
+	}
+	snap, err := wizard.LoadSnapshot(a.ctx, a.kernel.MemStore, sid)
+	if err != nil {
+		return nil, fmt.Errorf("load snapshot: %w", err)
+	}
+	intent := ""
+	if snap.UserIntent != nil {
+		intent = snap.UserIntent.Text
+	}
+	if strings.TrimSpace(intent) == "" {
+		return nil, fmt.Errorf("user intent is empty; cannot suggest architecture")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
+	defer cancel()
+	arch, err := client.SuggestArchitecture(ctx, intent)
+	if err != nil {
+		return nil, err
+	}
+	return arch.ToSemantic(), nil
+}
+
+func (a *App) llmClient() (*llm.Client, error) {
+	key, src := llm.LoadKey()
+	if key == "" || src == llm.KeyAbsent {
+		return nil, fmt.Errorf("anthropic api key not configured")
+	}
+	return llm.NewClient(key, llm.LoadBaseURL()), nil
 }
 
 func (a *App) SubmitUISpec(sid string, components []wizard.UIComponentPayload, mappingPrompt string) error {
@@ -153,17 +350,78 @@ func (a *App) SubmitUISpec(sid string, components []wizard.UIComponentPayload, m
 	if err := wizard.WriteUIPrompt(a.ctx, a.kernel.MemStore, sid, cwd, mappingPrompt, ids); err != nil {
 		return err
 	}
-	return wizard.Advance(a.ctx, a.kernel.MemStore, sid, wizard.StageUISpec, wizard.StageTechPlan)
+	return wizard.Advance(a.ctx, a.kernel.MemStore, sid, wizard.StageUISpec, wizard.StageInteractionLogic)
 }
 
-func (a *App) SubmitTechPlan(sid, draft, decision, adjusted string) error {
+// SubmitInteractionLogic persists Stage 3.5 — user-described interaction
+// flows for the UI elements. Advances the wizard to the tech plan stage.
+func (a *App) SubmitInteractionLogic(sid string, payload wizard.InteractionLogicPayload) error {
+	if sid == "" {
+		return fmt.Errorf("sid is required")
+	}
+	cwd, _ := os.Getwd()
+	if err := wizard.WriteInteractionLogic(a.ctx, a.kernel.MemStore, sid, cwd, payload); err != nil {
+		return err
+	}
+	return wizard.Advance(a.ctx, a.kernel.MemStore, sid, wizard.StageInteractionLogic, wizard.StageTechPlan)
+}
+
+// DraftTechPlan kicks off async Stage 4 drafting. Loads the wizard snapshot,
+// composes a context-aware prompt, then invokes `claude --print` and streams
+// stdout bytes back through wailsRuntime.EventsEmit on channel "draft:<sid>":
+//
+//	{phase: "thinking"}              immediately
+//	{phase: "chunk", text: string}   for each stdout chunk
+//	{phase: "done", text: string}    on success (text is the full transcript)
+//	{phase: "error", message: ...}   on failure
+func (a *App) DraftTechPlan(sid string) error {
+	if sid == "" {
+		return fmt.Errorf("sid is required")
+	}
+	channel := "draft:" + sid
+	snap, err := wizard.LoadSnapshot(a.ctx, a.kernel.MemStore, sid)
+	if err != nil {
+		return fmt.Errorf("load snapshot: %w", err)
+	}
+	prompt := draft.BuildPrompt(snap)
+	cwd, _ := os.Getwd()
+
+	wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{"phase": "thinking"})
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		defer cancel()
+		text, err := draft.RunStream(ctx, cwd, prompt, func(chunk string) {
+			wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{
+				"phase": "chunk",
+				"text":  chunk,
+			})
+		})
+		if err != nil {
+			wailsRuntime.LogErrorf(a.ctx, "draft tech plan: %v", err)
+			wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{
+				"phase":   "error",
+				"message": err.Error(),
+				"text":    text,
+			})
+			return
+		}
+		wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{
+			"phase": "done",
+			"text":  text,
+		})
+	}()
+	return nil
+}
+
+func (a *App) SubmitTechPlan(sid, draftText, decision, adjusted string) error {
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
 	cwd, _ := os.Getwd()
 	approved := decision == "accept" || decision == "adjust"
 	payload := wizard.TechPlanPayload{
-		Draft:        draft,
+		Draft:        draftText,
 		Decision:     decision,
 		AdjustedText: adjusted,
 		Approved:     approved,
@@ -336,6 +594,20 @@ func composeExecutionPrompt(s wizard.Snapshot) string {
 		sb.WriteString("【UI 元素映射】\n")
 		sb.WriteString(s.UIPrompt.Prompt)
 		sb.WriteString("\n\n")
+	}
+	if s.InteractionLogic != nil && len(s.InteractionLogic.Flows) > 0 {
+		sb.WriteString("【交互逻辑】\n")
+		for i, f := range s.InteractionLogic.Flows {
+			sb.WriteString(fmt.Sprintf("  %d. %s → %s", i+1, f.Trigger, f.Action))
+			if f.Description != "" {
+				sb.WriteString("  // " + f.Description)
+			}
+			sb.WriteString("\n")
+		}
+		if s.InteractionLogic.Notes != "" {
+			sb.WriteString("备注:" + s.InteractionLogic.Notes + "\n")
+		}
+		sb.WriteString("\n")
 	}
 	if s.TechPlan != nil && s.TechPlan.Approved {
 		text := s.TechPlan.Draft

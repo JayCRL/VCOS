@@ -17,6 +17,7 @@ package wizard
 
 import (
 	"mobilevc/cognition/intake"
+	"mobilevc/desktop/scan"
 	"mobilevc/memory"
 )
 
@@ -29,6 +30,7 @@ const (
 	StageProjectIntent  Stage = "project_intent"
 	StageUISpec         Stage = "ui_spec"
 	StageUIPrompt       Stage = "ui_prompt"
+	StageInteractionLogic Stage = "interaction_logic"
 	StageTechPlan       Stage = "tech_plan"
 	StagePermissions    Stage = "permissions"
 	StageDecisionStyle  Stage = "decision_style"
@@ -42,6 +44,7 @@ var AllStages = []Stage{
 	StageUserIntent,
 	StageProjectIntent,
 	StageUISpec,
+	StageInteractionLogic,
 	StageTechPlan,
 	StagePermissions,
 	StageDecisionStyle,
@@ -83,11 +86,12 @@ func IDProjectIntent(sid string) string  { return IDPrefix + "project-intent-" +
 func IDUIComponent(sid, cid string) string {
 	return IDPrefix + "ui-component-" + sid + "-" + cid
 }
-func IDUIPrompt(sid string) string       { return IDPrefix + "ui-prompt-" + sid }
-func IDTechPlan(sid string) string       { return IDPrefix + "tech-plan-" + sid }
-func IDPermissions(sid string) string    { return IDPrefix + "permissions-" + sid }
-func IDDecisionStyle(sid string) string  { return IDPrefix + "decision-style-" + sid }
-func IDCursor(sid string) string         { return IDPrefix + "cursor-" + sid }
+func IDUIPrompt(sid string) string         { return IDPrefix + "ui-prompt-" + sid }
+func IDInteractionLogic(sid string) string { return IDPrefix + "interaction-logic-" + sid }
+func IDTechPlan(sid string) string         { return IDPrefix + "tech-plan-" + sid }
+func IDPermissions(sid string) string      { return IDPrefix + "permissions-" + sid }
+func IDDecisionStyle(sid string) string    { return IDPrefix + "decision-style-" + sid }
+func IDCursor(sid string) string           { return IDPrefix + "cursor-" + sid }
 
 // ——— Payload structs (JSON-encoded into memory.Entry.Content) ———
 
@@ -97,11 +101,13 @@ type UserIntentPayload struct {
 }
 
 // ProjectIntentPayload — Stage 2. Wraps the intake-detected profile plus
-// any free-text the user added in the wizard form.
+// any free-text the user added in the wizard form, plus the optional L3
+// semantic scan summary produced by `claude --print`.
 type ProjectIntentPayload struct {
 	Prompt   string                  `json:"prompt"`
 	UserNote string                  `json:"userNote,omitempty"`
 	Profile  intake.CognitiveProfile `json:"profile"`
+	Semantic *scan.Semantic          `json:"semantic,omitempty"`
 }
 
 // UIComponentPayload — Stage 3, one entry per component on the canvas.
@@ -119,6 +125,25 @@ type UIComponentPayload struct {
 type UIPromptPayload struct {
 	Prompt       string   `json:"prompt"`
 	ComponentIDs []string `json:"componentIds"`
+}
+
+// InteractionFlow — Stage 3.5, one user-described UI interaction.
+// Trigger / Action are free-form strings (e.g. "click button-login" /
+// "navigate /dashboard"); ComponentID links back to a Stage-3 component
+// when applicable. Description holds any additional natural-language
+// explanation the agent should read at execution time.
+type InteractionFlow struct {
+	ID          string `json:"id"`
+	Trigger     string `json:"trigger"`
+	ComponentID string `json:"componentId,omitempty"`
+	Action      string `json:"action"`
+	Description string `json:"description,omitempty"`
+}
+
+// InteractionLogicPayload — Stage 3.5.
+type InteractionLogicPayload struct {
+	Flows []InteractionFlow `json:"flows"`
+	Notes string            `json:"notes,omitempty"`
 }
 
 // TechPlanPayload — Stage 4. The AI-drafted plan plus the user's verdict.

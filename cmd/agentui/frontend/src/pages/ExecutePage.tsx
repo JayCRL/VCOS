@@ -1,4 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { PipelineStepper } from "../components/PipelineStepper";
+import {
+  PendingDecisionCard,
+  type PendingDecision,
+} from "../components/PendingDecisionCard";
+import {
+  DEFAULT_PIPELINE,
+  isAwaitingTopic,
+  reducePipeline,
+  type PipelineNode,
+} from "../lib/pipelineRouter";
 import type { BusEvent, DecisionStyle } from "../types/bindings";
 
 interface Props {
@@ -6,90 +18,89 @@ interface Props {
   decisionStyle?: DecisionStyle;
 }
 
-const formatPayload = (p: BusEvent["payload"]): string => {
-  if (!p) return "";
-  if (typeof p === "string") return p;
-  const obj = p as Record<string, unknown>;
-  const candidates = ["Message", "message", "Title", "State", "Stack", "Text"];
-  for (const k of candidates) {
-    const v = obj[k];
-    if (typeof v === "string" && v.trim()) return v;
-  }
-  try {
-    return JSON.stringify(obj).slice(0, 240);
-  } catch {
-    return String(p);
-  }
-};
-
-const isPermissionTopic = (topic: string) =>
-  topic === "permission_request" || topic.toLowerCase().includes("permission");
-const isInteractionTopic = (topic: string) =>
-  topic === "interaction_request" || topic.toLowerCase().includes("interaction");
-const isReviewTopic = (topic: string) =>
-  topic === "review_state" || topic.toLowerCase().includes("review");
-const isPlanTopic = (topic: string) =>
-  topic === "plan_request" || topic.toLowerCase().includes("plan");
-
-interface PendingDecision {
-  cursor: number;
-  topic: string;
-  title: string;
-  kind: "permission" | "review" | "plan" | "interaction";
+interface State {
+  nodes: PipelineNode[];
+  events: BusEvent[];
 }
 
+type Action =
+  | { type: "event"; ev: BusEvent }
+  | { type: "reset" };
+
+const reducer = (s: State, a: Action): State => {
+  if (a.type === "reset") return { nodes: DEFAULT_PIPELINE.map((n) => ({ ...n })), events: [] };
+  if (a.type === "event") {
+    return {
+      nodes: reducePipeline(s.nodes, a.ev),
+      events: [...s.events.slice(-499), a.ev],
+    };
+  }
+  return s;
+};
+
+const summarizeForCard = (ev: BusEvent): { title: string; detail?: string } => {
+  const p = (ev.payload ?? {}) as Record<string, unknown>;
+  const title =
+    (p.Title as string) ||
+    (p.Message as string) ||
+    (p.message as string) ||
+    ev.topic;
+  const detail =
+    (p.Step as string) ||
+    (p.Command as string) ||
+    (p.Description as string) ||
+    undefined;
+  return { title, detail };
+};
+
 export const ExecutePage = ({ sid, decisionStyle }: Props) => {
-  const [events, setEvents] = useState<BusEvent[]>([]);
+  const style: DecisionStyle = decisionStyle ?? "hybrid";
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    nodes: DEFAULT_PIPELINE.map((n) => ({ ...n })),
+    events: [] as BusEvent[],
+  }));
   const [pending, setPending] = useState<PendingDecision[]>([]);
-  const [input, setInput] = useState("");
+  const [chat, setChat] = useState("");
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const [err, setErr] = useState("");
-  const scrollerRef = useRef<HTMLDivElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
 
-  const style: DecisionStyle = decisionStyle ?? "hybrid";
-
+  // Subscribe to bus events for this session.
   const handleEvent = useCallback(
-    async (e: BusEvent) => {
-      setEvents((prev) => [...prev.slice(-499), e]);
+    async (ev: BusEvent) => {
+      dispatch({ type: "event", ev });
 
-      const payload = (e.payload ?? {}) as Record<string, unknown>;
-      const title =
-        (payload.Title as string) ||
-        (payload.Message as string) ||
-        e.topic;
-      let kind: PendingDecision["kind"] | null = null;
-      if (isPermissionTopic(e.topic)) kind = "permission";
-      else if (isReviewTopic(e.topic)) kind = "review";
-      else if (isPlanTopic(e.topic)) kind = "plan";
-      else if (isInteractionTopic(e.topic)) kind = "interaction";
+      const kind = isAwaitingTopic(ev.topic ?? "");
       if (!kind) return;
 
-      // autonomous: auto-accept all
+      // autonomous: auto-accept
       if (style === "autonomous") {
         try {
           if (kind === "permission") await window.go.main.App.ApprovePermission(sid, "allow");
           else if (kind === "review") await window.go.main.App.ApproveReview(sid, "accept", false);
           else if (kind === "plan") await window.go.main.App.ApprovePlan(sid, "accept");
         } catch {
-          // surface as pending if auto-accept failed
+          /* surface as pending below */
         }
         return;
       }
-      // hybrid: only permission/interaction need user input; review/plan auto
+      // hybrid: review/plan auto-accept; permission/interaction surface
       if (style === "hybrid" && (kind === "review" || kind === "plan")) {
         try {
           if (kind === "review") await window.go.main.App.ApproveReview(sid, "accept", false);
           else await window.go.main.App.ApprovePlan(sid, "accept");
           return;
         } catch {
-          // fall through to surface
+          /* fall through */
         }
       }
-      // step-by-step or hybrid-permission/interaction: surface to user
+
+      const s = summarizeForCard(ev);
       setPending((prev) => [
         ...prev,
-        { cursor: e.cursor, topic: e.topic, title, kind },
+        { id: ev.cursor, kind, title: s.title, detail: s.detail },
       ]);
     },
     [sid, style]
@@ -107,15 +118,16 @@ export const ExecutePage = ({ sid, decisionStyle }: Props) => {
     };
   }, [sid, handleEvent]);
 
+  // Auto-scroll dev drawer.
   useEffect(() => {
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
-    }
-  }, [events]);
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [state.events.length, showLogs]);
 
   const start = async () => {
     setBusy(true);
     setErr("");
+    dispatch({ type: "reset" });
     try {
       await window.go.main.App.StartExecution(sid);
       setRunning(true);
@@ -127,11 +139,11 @@ export const ExecutePage = ({ sid, decisionStyle }: Props) => {
   };
 
   const send = async () => {
-    if (!input.trim()) return;
+    if (!chat.trim()) return;
     setBusy(true);
     try {
-      await window.go.main.App.SendChat(sid, input.trim());
-      setInput("");
+      await window.go.main.App.SendChat(sid, chat.trim());
+      setChat("");
       setRunning(true);
     } catch (e) {
       setErr(`${(e as Error).message ?? e}`);
@@ -140,84 +152,83 @@ export const ExecutePage = ({ sid, decisionStyle }: Props) => {
     }
   };
 
-  const decide = async (p: PendingDecision, decision: string) => {
+  const decide = async (p: PendingDecision, decision: "accept" | "reject" | "adjust") => {
     try {
       if (p.kind === "permission") await window.go.main.App.ApprovePermission(sid, decision);
-      else if (p.kind === "review") await window.go.main.App.ApproveReview(sid, decision, false);
+      else if (p.kind === "review")
+        await window.go.main.App.ApproveReview(sid, decision, false);
       else if (p.kind === "plan") await window.go.main.App.ApprovePlan(sid, decision);
       else await window.go.main.App.ApprovePermission(sid, decision);
-      setPending((prev) => prev.filter((x) => x.cursor !== p.cursor));
+      setPending((prev) => prev.filter((x) => x.id !== p.id));
     } catch (e) {
       setErr(`${(e as Error).message ?? e}`);
     }
   };
 
-  const styleBadge = useMemo(() => {
-    const map: Record<DecisionStyle, { label: string; cls: string }> = {
-      "step-by-step": { label: "分步", cls: "badge-warn" },
-      hybrid: { label: "混合", cls: "badge-info" },
-      autonomous: { label: "全自动", cls: "badge-ok" },
-    };
-    const m = map[style];
-    return <span className={`badge ${m.cls}`}>{m.label}</span>;
-  }, [style]);
+  const styleBadge = {
+    "step-by-step": { label: "分步", cls: "exec-badge-warn" },
+    hybrid: { label: "混合", cls: "exec-badge-info" },
+    autonomous: { label: "全自动", cls: "exec-badge-ok" },
+  } as const;
+  const badge = styleBadge[style];
 
   return (
-    <section className="stage-box">
-      <h2 className="stage-title">
-        Stage 7 · 执行 {styleBadge}
-      </h2>
-      <p className="stage-hint">
-        系统会把前面六步的产物拼成上下文 prompt,启动 <code>claude</code> PTY,
-        所有事件流回此面板。决策风格控制要不要在每个决策点找你确认。
-      </p>
-
-      <div className="actions">
-        <button onClick={start} disabled={busy}>
-          {running ? "重新启动" : "启动执行"}
+    <div className="exec-root">
+      <div className="exec-toolbar">
+        <h2 className="designer-h" style={{ margin: 0 }}>
+          {running ? "正在执行" : "准备启动"}
+        </h2>
+        <span className={`exec-badge ${badge.cls}`}>{badge.label}</span>
+        <span className="session-pill" style={{ marginLeft: 8 }}>{sid}</span>
+        <div className="spacer" />
+        <button className="btn" onClick={start} disabled={busy}>
+          {running ? "重新启动" : "▶ 启动执行"}
         </button>
-        {err && <span className="status status-error">{err}</span>}
+        <button className="btn btn-ghost" onClick={() => setShowLogs((v) => !v)}>
+          {showLogs ? "收起开发者面板" : "开发者面板"}
+        </button>
       </div>
 
-      {pending.length > 0 && (
-        <div className="pending-list">
-          <div className="field-label">待审决策</div>
-          {pending.map((p) => (
-            <div className="pending-row" key={p.cursor}>
-              <span className="pending-topic">[{p.kind}]</span>
-              <span className="pending-title">{p.title}</span>
-              <div className="pending-actions">
-                <button onClick={() => decide(p, "accept")}>Accept</button>
-                <button onClick={() => decide(p, "reject")}>Reject</button>
-                {p.kind === "review" && (
-                  <button onClick={() => decide(p, "adjust")}>Adjust</button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="exec-canvas">
+        <PipelineStepper nodes={state.nodes} />
+        <PendingDecisionCard pending={pending} onDecide={decide} />
+      </div>
 
-      <div className="event-stream" ref={scrollerRef}>
-        {events.length === 0 ? (
-          <div className="event-empty">尚无事件 — 点击「启动执行」</div>
-        ) : (
-          events.map((e) => (
-            <div className="event-row" key={e.cursor}>
-              <span className="event-cursor">#{e.cursor}</span>
-              <span className="event-topic">{e.topic}</span>
-              <span className="event-payload">{formatPayload(e.payload)}</span>
+      <AnimatePresence>
+        {showLogs && (
+          <motion.div
+            className="dev-drawer"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 220, opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="dev-drawer-head">事件流(开发者视图)</div>
+            <div className="dev-drawer-log" ref={logRef}>
+              {state.events.length === 0 ? (
+                <span className="dev-drawer-empty">尚无事件</span>
+              ) : (
+                state.events.map((e) => (
+                  <div className="dev-drawer-row" key={e.cursor}>
+                    <span className="dev-cursor">#{e.cursor}</span>
+                    <span className="dev-topic">{e.topic}</span>
+                    <span className="dev-payload">
+                      {summarizeForCard(e).title}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
-          ))
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
-      <div className="chat-row">
+      <div className="exec-chat-bar">
         <input
-          className="comp-input"
-          placeholder="给 agent 说点什么 …(回车发送)"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+          className="input"
+          placeholder="想插一句话?这里说,直接发给 agent …"
+          value={chat}
+          onChange={(e) => setChat(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -226,10 +237,11 @@ export const ExecutePage = ({ sid, decisionStyle }: Props) => {
           }}
           disabled={busy}
         />
-        <button onClick={send} disabled={busy || !input.trim()}>
+        <button className="btn btn-primary" onClick={send} disabled={busy || !chat.trim()}>
           发送
         </button>
+        {err && <span className="status-error" style={{ marginLeft: 8 }}>{err}</span>}
       </div>
-    </section>
+    </div>
   );
 };
