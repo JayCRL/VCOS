@@ -90,7 +90,7 @@ export const ProjectIntentPage = ({ sid, onDone }: Props) => {
     if (phase !== "greet") return;
     setPhase("l1-scan");
     try {
-      const t = await window.go.main.App.ScanPhysical("");
+      const t = await window.go.main.App.ScanPhysical(sid, "");
       setTree(t);
       const dirCount = t.children?.filter((c) => c.isDir).length ?? 0;
       const fileCount = countAllFiles(t);

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ConvTurn } from "../hooks/conversation.types";
 import type { InteractionFlow, UIComponentPayload } from "../types/bindings";
+import { InteractionFlowGraph } from "../components/InteractionFlowGraph";
 
 const newId = () => `f-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -20,6 +21,8 @@ const FlowEditor = ({
   const [desc, setDesc] = useState("");
   const [compId, setCompId] = useState<string>("");
 
+  const remove = (id: string) => setState({ flows: flows.filter((f) => f.id !== id) });
+
   const add = () => {
     if (!trigger.trim() || !action.trim()) return;
     const f: InteractionFlow = {
@@ -35,70 +38,65 @@ const FlowEditor = ({
     setDesc("");
     setCompId("");
   };
-  const remove = (id: string) =>
-    setState({ flows: flows.filter((f) => f.id !== id) });
 
   return (
     <div className="flow-editor">
-      <div className="flow-list">
-        {flows.length === 0 && (
-          <div className="flow-empty">暂时还没有添加任何交互 — 用下面的卡片加一条吧。</div>
-        )}
-        {flows.map((f) => (
-          <div className="flow-card" key={f.id}>
-            <div className="flow-trigger">{f.trigger}</div>
-            <div className="flow-arrow">→</div>
-            <div className="flow-action">{f.action}</div>
-            {f.description && <div className="flow-desc">{f.description}</div>}
-            <button className="flow-remove" onClick={() => remove(f.id)} aria-label="删除">
-              ×
-            </button>
-          </div>
-        ))}
+      {/* Graph area */}
+      <div className="flow-graph-area">
+        <InteractionFlowGraph
+          components={components}
+          flows={flows}
+          onDeleteFlow={remove}
+        />
       </div>
+
+      {/* Add form */}
       <div className="flow-form">
-        <input
-          className="input"
-          placeholder="触发(如:点击登录按钮)"
-          value={trigger}
-          onChange={(e) => setTrigger(e.target.value)}
-        />
-        <input
-          className="input"
-          placeholder="动作(如:跳转到 /dashboard)"
-          value={action}
-          onChange={(e) => setAction(e.target.value)}
-        />
-        <input
-          className="input"
-          placeholder="补充说明(可选)"
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-        />
-        {components.length > 0 && (
-          <select
+        <div className="flow-form-row">
+          <input
             className="input"
-            value={compId}
-            onChange={(e) => setCompId(e.target.value)}
-          >
-            <option value="">(关联组件 · 可选)</option>
-            {components.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        )}
-        <button className="btn" onClick={add} disabled={!trigger.trim() || !action.trim()}>
-          + 添加
-        </button>
+            placeholder="触发(如:点击登录按钮)"
+            value={trigger}
+            onChange={(e) => setTrigger(e.target.value)}
+          />
+          <span className="flow-form-arrow">→</span>
+          <input
+            className="input"
+            placeholder="动作(如:跳转到 /dashboard)"
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+          />
+        </div>
+        <div className="flow-form-row">
+          <input
+            className="input"
+            placeholder="补充说明(可选)"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+          />
+          {components.length > 0 && (
+            <select
+              className="input"
+              value={compId}
+              onChange={(e) => setCompId(e.target.value)}
+            >
+              <option value="">(关联组件 · 可选)</option>
+              {components.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button className="btn" onClick={add} disabled={!trigger.trim() || !action.trim()}>
+            + 添加
+          </button>
+        </div>
       </div>
+
       <div className="flow-footer">
-        <span className="flow-count">已添加 {flows.length} 条</span>
-        <button
-          className="btn btn-primary"
-          onClick={() => done(`列了 ${flows.length} 条交互`)}
-        >
+        <span className="flow-count">已添加 {flows.length} 条交互</span>
+        <button className="btn btn-primary" onClick={() => done(`列了 ${flows.length} 条交互`)}>
           完成 →
         </button>
       </div>
@@ -129,7 +127,7 @@ export const interactionLogicTurns: ConvTurn[] = [
           flows: drafts,
           notes: (s.notes as string | undefined) ?? set.notes ?? "",
           aiNotice: drafts.length
-            ? `AI 起了 ${drafts.length} 条草稿,自己挑。`
+            ? `AI 起了 ${drafts.length} 条草稿 — 图上有连线,左侧是组件,右侧是动作,点 × 可删。自己再加。`
             : "AI 没给出草稿,你直接加吧。",
         };
       } catch (e) {

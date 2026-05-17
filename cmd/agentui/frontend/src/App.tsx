@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { StageStepper } from "./components/StageStepper";
 import { ConversationView } from "./components/ConversationView";
+import { APIKeyDialog } from "./components/APIKeyDialog";
+import { LandingPage } from "./pages/LandingPage";
 import { UIDesignerPage } from "./pages/UIDesignerPage";
 import { ExecutePage } from "./pages/ExecutePage";
 import { ProjectIntentPage } from "./pages/ProjectIntentPage";
@@ -28,11 +30,22 @@ const PLACEHOLDER_META: Record<string, { title: string; hint: string }> = {
   done: { title: "全部完成", hint: "你可以开启下一个会话。" },
 };
 
+const DARK_KEY = "agentos-dark";
+
 const App = () => {
   const [sid, setSid] = useState("");
   const [snapshot, setSnapshot] = useState<WizardSnapshot | null>(null);
   const [status, setStatus] = useState("");
   const [override, setOverride] = useState<Stage | null>(null);
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem(DARK_KEY);
+    return saved != null ? saved === "1" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+  const [keyOpen, setKeyOpen] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  }, [dark]);
 
   const refresh = useCallback(async (id: string) => {
     try {
@@ -43,22 +56,8 @@ const App = () => {
     }
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const sessions = await window.go.main.App.ListSessions();
-        if (sessions.length > 0) {
-          setSid(sessions[0].id);
-          await refresh(sessions[0].id);
-          setStatus("已恢复上次会话");
-        } else {
-          setStatus("点击 + 新会话开始");
-        }
-      } catch (e) {
-        setStatus(`加载失败: ${(e as Error).message ?? e}`);
-      }
-    })();
-  }, [refresh]);
+  // LandingPage always shows first — user picks a session or creates one.
+  // No auto-restore of the last session.
 
   const newSession = async () => {
     try {
@@ -70,6 +69,40 @@ const App = () => {
     } catch (e) {
       setStatus(`创建失败: ${(e as Error).message ?? e}`);
     }
+  };
+
+  const openFolder = async () => {
+    try {
+      const path = await window.go.main.App.PickFolder("");
+      if (!path) return; // user cancelled
+      const id = await window.go.main.App.StartSession("");
+      setSid(id);
+      await window.go.main.App.SetSessionCWD(id, path);
+      setOverride(null);
+      await refresh(id);
+      const dirName = path.split("/").pop() || path;
+      setStatus(`已打开: ${dirName}`);
+    } catch (e) {
+      setStatus(`打开失败: ${(e as Error).message ?? e}`);
+    }
+  };
+
+  const selectSession = async (id: string) => {
+    setSid(id);
+    try {
+      await refresh(id);
+      setStatus("已恢复会话");
+    } catch {
+      setStatus("会话恢复失败");
+    }
+  };
+
+  const toggleDark = () => {
+    setDark((d) => {
+      const next = !d;
+      localStorage.setItem(DARK_KEY, next ? "1" : "0");
+      return next;
+    });
   };
 
   const current: Stage =
@@ -94,16 +127,11 @@ const App = () => {
   const stageNode = useMemo(() => {
     if (!sid) {
       return (
-        <div className="placeholder-card">
-          <div className="placeholder-title">还没有会话</div>
-          <div className="placeholder-hint">
-            点击「+ 新会话」开始向导。每一阶段的产物都会写到 Memory,
-            后续执行时 MOE 会自动召回作为上下文。
-          </div>
-          <button className="btn btn-primary" onClick={newSession}>
-            开始一个新会话
-          </button>
-        </div>
+        <LandingPage
+          onNewSession={newSession}
+          onOpenFolder={openFolder}
+          onSelectSession={selectSession}
+        />
       );
     }
     switch (current) {
@@ -207,6 +235,20 @@ const App = () => {
         </div>
         <div className="header-actions">
           {sid && <span className="session-pill">{sid}</span>}
+          <button
+            className="btn btn-ghost btn-icon"
+            title={dark ? "切到浅色模式" : "切到深色模式"}
+            onClick={toggleDark}
+          >
+            {dark ? "☀" : "☾"}
+          </button>
+          <button
+            className="btn btn-ghost btn-icon"
+            title="API 设置"
+            onClick={() => setKeyOpen(true)}
+          >
+            ⚙
+          </button>
           <button className="btn btn-ghost" onClick={newSession}>
             + 新会话
           </button>
@@ -221,7 +263,7 @@ const App = () => {
         />
       )}
 
-      <main className="stage-main">
+      <main className={`stage-main${!sid ? " stage-main-landing" : ""}`}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={current}
@@ -236,9 +278,16 @@ const App = () => {
         </AnimatePresence>
       </main>
 
-      <footer className="app-footer">
-        <span className="status-text">{status}</span>
-      </footer>
+      {sid && (
+        <footer className="app-footer">
+          <span className="status-text">{status}</span>
+        </footer>
+      )}
+
+      <APIKeyDialog
+        open={keyOpen}
+        onClose={() => setKeyOpen(false)}
+      />
     </div>
   );
 };

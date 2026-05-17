@@ -32,8 +32,39 @@ type App struct {
 	kernel *kernel.Kernel
 	bridge *eventBridge
 
-	mu       sync.Mutex
-	services map[string]*session.Service
+	mu          sync.Mutex
+	services    map[string]*session.Service
+	projectDirs map[string]string // sid -> project root directory
+}
+
+// projectCWD returns the project root for a session, falling back to the
+// process working directory when no explicit path was set.
+func (a *App) projectCWD(sid string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if d, ok := a.projectDirs[sid]; ok && d != "" {
+		return d
+	}
+	d, _ := os.Getwd()
+	return d
+}
+
+// SetSessionCWD binds a project root directory to a session.
+func (a *App) SetSessionCWD(sid, path string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.projectDirs == nil {
+		a.projectDirs = map[string]string{}
+	}
+	a.projectDirs[sid] = path
+}
+
+// PickFolder opens the native directory picker and returns the chosen path.
+func (a *App) PickFolder(dft string) (string, error) {
+	return wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title:            "选择项目所在文件夹",
+		DefaultDirectory: dft,
+	})
 }
 
 func NewApp(k *kernel.Kernel) *App {
@@ -112,7 +143,7 @@ func (a *App) SubmitUserIntent(sid, text string) error {
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	if err := wizard.WriteUserIntent(a.ctx, a.kernel.MemStore, sid, cwd, text); err != nil {
 		return err
 	}
@@ -130,7 +161,7 @@ func (a *App) SubmitProjectIntent(sid, prompt, userNote string, semantic *scan.S
 	if sid == "" {
 		return intake.CognitiveProfile{}, fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	profile, err := a.kernel.Intake.Run(a.ctx, sid, cwd, prompt)
 	if err != nil {
 		return profile, fmt.Errorf("intake: %w", err)
@@ -147,7 +178,10 @@ func (a *App) SubmitProjectIntent(sid, prompt, userNote string, semantic *scan.S
 // ScanPhysical returns the L1 file tree rooted at cwd (defaults to the GUI's
 // working directory if empty). Fast (< 2s for typical projects); fully
 // synchronous.
-func (a *App) ScanPhysical(cwd string) (*scan.TreeNode, error) {
+func (a *App) ScanPhysical(sid, cwd string) (*scan.TreeNode, error) {
+	if strings.TrimSpace(cwd) == "" {
+		cwd = a.projectCWD(sid)
+	}
 	if strings.TrimSpace(cwd) == "" {
 		cwd, _ = os.Getwd()
 	}
@@ -166,7 +200,7 @@ func (a *App) ScanSemantic(sid, cwd string) error {
 		return fmt.Errorf("sid is required")
 	}
 	if strings.TrimSpace(cwd) == "" {
-		cwd, _ = os.Getwd()
+		cwd = a.projectCWD(sid)
 	}
 	channel := "scan:" + sid
 	wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{"phase": "thinking"})
@@ -339,7 +373,7 @@ func (a *App) SubmitUISpec(sid string, components []wizard.UIComponentPayload, m
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	ids := make([]string, 0, len(components))
 	for _, c := range components {
 		if err := wizard.WriteUIComponent(a.ctx, a.kernel.MemStore, sid, cwd, c); err != nil {
@@ -359,7 +393,7 @@ func (a *App) SubmitInteractionLogic(sid string, payload wizard.InteractionLogic
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	if err := wizard.WriteInteractionLogic(a.ctx, a.kernel.MemStore, sid, cwd, payload); err != nil {
 		return err
 	}
@@ -384,7 +418,7 @@ func (a *App) DraftTechPlan(sid string) error {
 		return fmt.Errorf("load snapshot: %w", err)
 	}
 	prompt := draft.BuildPrompt(snap)
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 
 	wailsRuntime.EventsEmit(a.ctx, channel, map[string]any{"phase": "thinking"})
 
@@ -418,7 +452,7 @@ func (a *App) SubmitTechPlan(sid, draftText, decision, adjusted string) error {
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	approved := decision == "accept" || decision == "adjust"
 	payload := wizard.TechPlanPayload{
 		Draft:        draftText,
@@ -436,7 +470,7 @@ func (a *App) SubmitPermissions(sid string, p wizard.PermissionsPayload) error {
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	if err := wizard.WritePermissions(a.ctx, a.kernel.MemStore, sid, cwd, p); err != nil {
 		return err
 	}
@@ -447,7 +481,7 @@ func (a *App) SubmitDecisionStyle(sid string, style string) error {
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	ds := wizard.DecisionStyle(style)
 	switch ds {
 	case wizard.StyleStepByStep, wizard.StyleHybrid, wizard.StyleAutonomous:
@@ -477,7 +511,7 @@ func (a *App) StartExecution(sid string) error {
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	snap, err := wizard.LoadSnapshot(a.ctx, a.kernel.MemStore, sid)
 	if err != nil {
 		return fmt.Errorf("load snapshot: %w", err)
@@ -507,7 +541,7 @@ func (a *App) SendChat(sid, text string) error {
 	if sid == "" {
 		return fmt.Errorf("sid is required")
 	}
-	cwd, _ := os.Getwd()
+	cwd := a.projectCWD(sid)
 	svc := a.getOrCreateService(sid)
 	svc.RecordUserInput(text)
 	a.bridge.Attach(a.ctx, a.kernel.Bus, sid)

@@ -242,6 +242,8 @@ declare global {
         App: {
           StartSession(name: string): Promise<string>;
           ListSessions(): Promise<SessionSummary[]>;
+          PickFolder(dft: string): Promise<string>;
+          SetSessionCWD(sid: string, path: string): Promise<void>;
           SubmitUserIntent(sid: string, text: string): Promise<void>;
           SubmitProjectIntent(
             sid: string,
@@ -249,7 +251,7 @@ declare global {
             userNote: string,
             semantic: Semantic | null
           ): Promise<CognitiveProfile>;
-          ScanPhysical(cwd: string): Promise<TreeNode>;
+          ScanPhysical(sid: string, cwd: string): Promise<TreeNode>;
           ScanSemantic(sid: string, cwd: string): Promise<void>;
           DraftTechPlan(sid: string): Promise<void>;
           SubmitUISpec(
